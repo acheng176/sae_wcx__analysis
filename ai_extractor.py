@@ -1,3 +1,24 @@
+import openai
+import json
+from tqdm import tqdm
+import config
+
+def setup_azure_openai():
+    """Azure OpenAIの設定"""
+    print("\nSetting up Azure OpenAI client...")
+    openai.api_key = config.AZURE_OPENAI_API_KEY
+    openai.api_version = config.AZURE_OPENAI_API_VERSION
+    openai.api_base = config.AZURE_OPENAI_ENDPOINT
+    openai.api_type = 'azure'
+    print(f"Azure OpenAI API Base: {config.AZURE_OPENAI_ENDPOINT}")
+    print(f"Azure OpenAI API Version: {config.AZURE_OPENAI_API_VERSION}")
+    print(f"Azure OpenAI Deployment: {config.AZURE_OPENAI_DEPLOYMENT_NAME}")
+    # APIキーの存在確認（値は表示しない）
+    if not config.AZURE_OPENAI_API_KEY:
+        print("WARNING: Azure OpenAI API Key is missing!")
+    else:
+        print("Azure OpenAI API Key is set")
+
 def extract_structured_data(text):
     """AIを使ってテキストから構造化データを抽出する"""
     setup_azure_openai()
@@ -52,8 +73,8 @@ def extract_structured_data(text):
     print("Sending request to Azure OpenAI API...")
     
     try:
-        response = openai.chat.completions.create(
-            model=config.AZURE_OPENAI_DEPLOYMENT_NAME,
+        response = openai.ChatCompletion.create(
+            deployment_id=config.AZURE_OPENAI_DEPLOYMENT_NAME,
             messages=[
                 {"role": "system", "content": "You are an AI assistant that extracts structured data from SAE WCX program information."},
                 {"role": "user", "content": prompt}
@@ -102,4 +123,31 @@ def extract_structured_data(text):
             
     except Exception as e:
         print(f"Error calling Azure OpenAI API: {e}")
-        return [] 
+        return []
+
+def process_all_texts(all_texts):
+    """全てのテキストから構造化データを抽出する"""
+    print("\nStarting to process all extracted texts with AI...")
+    all_data = []
+    
+    for idx, text_item in enumerate(tqdm(all_texts, desc="Extracting data with AI")):
+        try:
+            print(f"\nProcessing file {idx+1}/{len(all_texts)}: {text_item['filename']}")
+            extracted_data = extract_structured_data(text_item["text"])
+            
+            if extracted_data:
+                # ファイル名を各レコードに追加
+                for data in extracted_data:
+                    data["Source File"] = text_item["filename"]
+                    all_data.append(data)
+                
+                print(f"Extracted {len(extracted_data)} records from {text_item['filename']}")
+            else:
+                print(f"Warning: No data extracted from {text_item['filename']}")
+                
+        except Exception as e:
+            print(f"Error processing file {text_item['filename']}: {e}")
+            continue
+    
+    print(f"\nTotal extracted records: {len(all_data)}")
+    return all_data
