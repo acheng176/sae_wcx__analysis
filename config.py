@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+from datetime import datetime
 
 # .envファイルから環境変数を読み込む
 load_dotenv()
@@ -15,10 +16,12 @@ INPUT_FOLDER = "data/input"
 OUTPUT_FOLDER = "output"
 
 # Excel出力設定
-OUTPUT_EXCEL_FILE = os.path.join(OUTPUT_FOLDER, "wcx_sessions.xlsx")
+base_filename = "wcx_sessions"
+current_date = datetime.now().strftime("%Y%m%d")
+OUTPUT_EXCEL_FILE = os.path.join(OUTPUT_FOLDER, f"{base_filename}_{current_date}.xlsx")
 
 # 抽出するデータのカラム
-CCOLUMNS = [
+COLUMNS = [
     "Session_Name", 
     "Session_Code", 
     "Paper_No", 
