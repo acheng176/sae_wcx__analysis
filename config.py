@@ -18,14 +18,14 @@ OUTPUT_FOLDER = "output"
 OUTPUT_EXCEL_FILE = os.path.join(OUTPUT_FOLDER, "wcx_sessions.xlsx")
 
 # 抽出するデータのカラム
-COLUMNS = [
-    "Session Name", 
-    "Session Code", 
-    "Paper No.", 
+CCOLUMNS = [
+    "Session_Name", 
+    "Session_Code", 
+    "Paper_No", 
     "Title", 
     "Abstract",
-    "Main-author GR",
-    "Main-author affiliation",
-    "Co-author & Affiliation Gr",
-    "Region"
+    "Authors",
+    "Affiliations",
+    "Organizers",
+    "Chairperson"
 ]

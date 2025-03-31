@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import re
 import textwrap
 from datetime import datetime
+import time  # timeモジュールを追加
 
 def split_text(text, max_chars=2000):
     """テキストを適切なサイズに分割する"""
@@ -106,24 +107,31 @@ def chunk_text(text, max_chunk_size=6000):
     except Exception as e:
         print(f"Error: テキスト分割中にエラー発生: {e}")
         return [text]  # エラー時は元のテキストを1つのチャンクとして返す
-
+    
 def clean_json_response(content):
-    """APIレスポンスのJSONをクリーンアップする（改良版）"""
+    """APIレスポンスのJSONをクリーンアップする（より強化版）"""
     try:
         # Markdown装飾を削除
         content = re.sub(r'```json\s*|\s*```', '', content)
         content = content.strip()
         
-        # 無効な制御文字を置換
-        # ASCII制御文字（0-31）のうち、一部の改行文字（\n, \r, \t）を除いて削除
-        content = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F]', '', content)
+        # 制御文字を削除（改行、タブ、復帰以外の制御文字）
+        # 0x00-0x08: NULL～BS、0x0B: VT、0x0C: FF、0x0E-0x1F: SO～US の制御文字を削除
+        content = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F]+', '', content)
         
-        # 一般的なJSON形式の問題を修正
-        content = re.sub(r',(\s*[}\]])', r'\1', content)  # 末尾のカンマを削除
-        content = re.sub(r'(?<!\\)"(?=(,|\s*[}\]]))', '\\"', content)  # エスケープされていない引用符を修正
+        # エスケープされた引用符を一時的に通常の引用符に変換
+        content = content.replace('\\"', '"')
         
-        # JSONの形式を確認
-        # 単一オブジェクトの場合は配列に変換
+        # 二重バックスラッシュを一時マーカーに変換
+        content = content.replace('\\\\', '\\TEMP_BACKSLASH\\')
+        
+        # 不要なエスケープを削除 (例: \H → H)
+        content = re.sub(r'\\([^"\\])', r'\1', content)
+        
+        # 一時マーカーを二重バックスラッシュに戻す
+        content = content.replace('\\TEMP_BACKSLASH\\', '\\\\')
+        
+        # JSON形式を確認（単一オブジェクトの場合は配列に変換）
         if content.startswith('{') and content.endswith('}'):
             print("単一オブジェクトを配列に変換します")
             content = f"[{content}]"
@@ -133,25 +141,34 @@ def clean_json_response(content):
             print("Warning: 無効なJSON形式（配列ではない）")
             content = f"[{content}]"  # 配列でない場合は配列に変換
         
-        # JSONの検証を試みる（検証のみで値は使用しない）
+        # JSONの検証
         try:
             json.loads(content)
             print("JSON検証: 成功")
         except json.JSONDecodeError as e:
             print(f"JSON検証: 失敗 - {str(e)}")
-            # より積極的な修正を試みる
-            content = fix_json_errors(content)
+            print("デフォルトJSONを返します")
+            return '[{"Session_Name":"Unknown","Session_Code":"Unknown","Paper_No":"Unknown"}]'
         
         return content
     except Exception as e:
-        print(f"Error: JSONクリーンアップ中にエラー: {e}")
-        return content
+        print(f"Error: JSONクリーンアップ中にエラー: {str(e)}")
+        return '[{"Session_Name":"Unknown","Session_Code":"Unknown","Paper_No":"Unknown"}]'
+    
 
 def fix_json_errors(content):
     """JSONデータの一般的なエラーを修正する試み"""
     try:
         # 異常な制御文字をさらに削除
         content = re.sub(r'[\x00-\x1F]+', ' ', content)
+        
+        # エスケープの問題を修正
+        content = content.replace('\\"', '"')  # 誤ってエスケープされた引用符を修正
+        content = re.sub(r'([^\\])\\([^"\\bfnrtu])', r'\1\2', content)  # 無効なエスケープを削除
+
+        # 引用符のエスケープを適切に行う
+        content = re.sub(r'([^\\])"([^"]*)"', r'\1\\"\2\\"', content)
+        content = content.replace('\\\\', '\\')  # 二重バックスラッシュを修正
         
         # 壊れた引用符を修正
         content = re.sub(r'([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', content)
@@ -186,6 +203,22 @@ def fix_json_errors(content):
         if content.count('[') > content.count(']'):
             content = content + ']'
         
+        # 複雑なオブジェクトの場合、より単純なオブジェクトを抽出
+        try:
+            json.loads(content)
+        except json.JSONDecodeError:
+            # シンプルな手法: 単一オブジェクトを抽出
+            if content.strip().startswith('[{') and '}]' in content:
+                first_obj_end = content.find('}', content.find('{')) + 1
+                if first_obj_end > 0:
+                    simple_obj = content[:first_obj_end].replace('[{', '{') + '}'
+                    try:
+                        json.loads(simple_obj)
+                        print("単一オブジェクトを抽出しました")
+                        return f"[{simple_obj}]"
+                    except:
+                        pass
+        
         print("JSONエラーの修正を試みました")
         return content
     except Exception as e:
@@ -200,21 +233,18 @@ Extract information from the technical session text below. Return ONLY a valid J
 1. "Session_Name": The main session title at the start of the text
 2. "Session_Code": The code after "Session Code" (e.g., "PFL750")
 3. "Abstract": The paragraph starting with "This session..."
-4. "Room": The room information (e.g., "Room 140 A")
-5. "Session_Time": The session time (e.g., "8:00 a.m.")
-6. "Organizers": The full text after "Organizers:" until the next section
-7. "Chairperson": The full text after "Chairperson:" until the next section (if present)
-8. "Paper_No": Either a code like "2025-01-8582" or "ORAL ONLY"
-9. "Presentation_Time": The specific presentation time (e.g., "8:00 a.m.")
-10. "Title": The paper title that appears after the Paper_No on the same line
-11. "Authors": An array of author names. For each author:
+4. "Paper_No": Either a code like "2025-01-8582" or "ORAL ONLY"
+5. "Title": The paper title that appears after the Paper_No on the same line
+6. "Authors": An array of author names. For each author:
     - Must end with a comma
     - If there's only one author, it should still be in an array
     - Example: ["John Smith,"] or ["John Smith,", "Jane Doe,"]
-12. "Affiliations": An array of affiliations. For each affiliation:
+7. "Affiliations": An array of affiliations. For each affiliation:
     - Must end with a semicolon OR be followed by a new paragraph
     - If there's only one affiliation, it should still be in an array
     - Example: ["Honda R&D;"] or ["Honda R&D"]
+8. "Organizers": The full text after "Organizers:" until the next section
+9. "Chairperson": The full text after "Chairperson:" until the next section (if present)
 
 Important Rules:
 1. Session Structure:
@@ -223,7 +253,6 @@ Important Rules:
    - Each paper entry starts with a time (e.g., "8:00 a.m.")
 
 2. Paper Information Structure:
-   - Time appears on its own line
    - Paper_No and Title appear on the next line
    - Authors and Affiliations follow on subsequent lines
 
@@ -250,7 +279,7 @@ Text to extract from:
                 response = openai.ChatCompletion.create(
                     deployment_id=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
                     messages=[
-                        {"role": "system", "content": "You are a precise data extraction assistant. Return only valid JSON arrays with exact field names as specified. Ensure the JSON is correctly formatted with no control characters."},
+                        {"role": "system", "content": "You are a precise data extraction assistant. Return only valid JSON arrays with exact field names as specified. Ensure the JSON is correctly formatted with no control characters or backslashes in strings."},
                         {"role": "user", "content": prompt}
                     ],
                     temperature=0,
@@ -300,18 +329,26 @@ Text to extract from:
                     error_context = cleaned_content[max(0, e.pos-100):min(len(cleaned_content), e.pos+100)]
                     print(f"Error context:\n{error_context}")
                     
+                    # より積極的な修正を試みる
+                    # 全体のJSONが破損している場合は、空のリストを返す
+                    if '{' not in cleaned_content or '}' not in cleaned_content:
+                        print("有効なJSONオブジェクトが見つかりません")
+                        retry_count += 1
+                        time.sleep(2)
+                        continue
+                        
                     # 別の修正方法を試す
                     try:
-                        # シンプルな手法: 単一オブジェクトを抽出
-                        if cleaned_content.strip().startswith('{') and '}' in cleaned_content:
-                            simple_obj = cleaned_content.split('}', 1)[0] + '}'
-                            print("シンプルな抽出手法を試みます")
-                            data = json.loads(simple_obj)
-                            print("単一オブジェクトとして抽出成功")
-                            return [data]
+                        # シンプルな手法: JSONテキストを直接修正
+                        simple_obj = '{' + cleaned_content.split('{', 1)[1].split('}', 1)[0] + '}'
+                        print("シンプルな抽出手法を試みます")
+                        data = json.loads(simple_obj)
+                        print("単一オブジェクトとして抽出成功")
+                        return [data]
                     except:
-                        pass
+                        print("シンプルな抽出にも失敗しました")
                     
+                    # 最終的な対応策: 空の配列を返す
                     retry_count += 1
                     time.sleep(2)
                 
@@ -324,6 +361,7 @@ Text to extract from:
                 time.sleep(3)
         
         print(f"Warning: {max_retries}回のリトライ後もデータを抽出できませんでした")
+        # 空の配列を返す
         return []
         
     except Exception as e:
@@ -355,10 +393,32 @@ def extract_structured_data(text):
             if chunk_results:
                 # 重複を除去しながらデータを追加
                 for result in chunk_results:
-                    session_id = f"{result.get('Session Code', '')}_{result.get('Paper No.', '')}"
+                    # フィールド名を修正
+                    # APIの結果で返ってくるフィールド名が一致していない場合の対応
+                    field_mapping = {
+                        'Session_Name': 'Session_Name',
+                        'Session_Code': 'Session_Code',
+                        'session name': 'Session_Name',
+                        'session code': 'Session_Code',
+                        'Paper_No': 'Paper_No',
+                        'paper no': 'Paper_No',
+                        'paper_no': 'Paper_No',
+                    }
+                    
+                    # キーを標準化
+                    standardized_result = {}
+                    for key, value in result.items():
+                        std_key = field_mapping.get(key.lower(), key)
+                        standardized_result[std_key] = value
+                    
+                    # セッションIDの生成（キーの有無をチェック）
+                    session_code = standardized_result.get('Session_Code', '')
+                    paper_no = standardized_result.get('Paper_No', '')
+                    session_id = f"{session_code}_{paper_no}"
+                    
                     if session_id not in seen_sessions and session_id != "_":
                         seen_sessions.add(session_id)
-                        all_results.append(result)
+                        all_results.append(standardized_result)
                         print(f"新しいセッションを追加: {session_id}")
                 
                 print(f"Progress: 現在までに {len(all_results)} 件のユニークなレコードを抽出")
@@ -419,4 +479,4 @@ if __name__ == "__main__":
             print("Error: データの抽出に失敗しました")
             
     except Exception as e:
-        print(f"Error: プログラム実行中にエラー: {e}") 
+        print(f"Error: プログラム実行中にエラー: {e}")
