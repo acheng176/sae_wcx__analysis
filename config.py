@@ -24,9 +24,9 @@ OUTPUT_EXCEL_FILE = os.path.join(OUTPUT_FOLDER, f"{base_filename}_{current_date}
 COLUMNS = [
     "Session_Name", 
     "Session_Code", 
+    "Abstract",
     "Paper_No", 
     "Title", 
-    "Abstract",
     "Authors",
     "Affiliations",
     "Organizers",

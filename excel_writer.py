@@ -1,6 +1,29 @@
 import pandas as pd
 import os
 import config
+import re
+
+def clean_string_array(text):
+    """文字列として表現された配列をクリーニングする（シングルクォーテーションと角括弧を除外）"""
+    if text is None:
+        return ""
+        
+    # 文字列に変換
+    text = str(text)
+    
+    # 角括弧（[]）を削除
+    text = text.replace('[', '').replace(']', '')
+    
+    # シングルクォート（'）を削除
+    text = text.replace("'", "")
+    
+    # 余分なスペースを削除
+    text = re.sub(r'\s+', ' ', text.strip())
+    
+    # 末尾のカンマやセミコロンを削除
+    text = re.sub(r'[,;]\s*$', '', text)
+    
+    return text
 
 def write_to_excel(data, output_file):
     """抽出データをExcelに書き込む"""
@@ -12,8 +35,20 @@ def write_to_excel(data, output_file):
         print(f"Creating output directory: {output_dir}")
         os.makedirs(output_dir, exist_ok=True)
     
+    # データのクリーニング
+    clean_data = []
+    for item in data:
+        clean_item = {}
+        for key, value in item.items():
+            if key in ['Authors', 'Affiliations']:
+                # 配列や文字列の整形
+                clean_item[key] = clean_string_array(value)
+            else:
+                clean_item[key] = value
+        clean_data.append(clean_item)
+    
     # DataFrameに変換
-    df = pd.DataFrame(data)
+    df = pd.DataFrame(clean_data)
     print(f"Created DataFrame with {len(df)} rows and {len(df.columns)} columns")
     print(f"DataFrame columns: {df.columns.tolist()}")
     
