@@ -1,7 +1,7 @@
 import os
 import config
 from pdf_processor import process_pdfs
-from ai_extractor import process_all_texts
+from ai_extractor import extract_structured_data
 from excel_writer import write_to_excel
 import time
 
@@ -32,8 +32,29 @@ def main():
     print("\n" + "="*40)
     print("STEP 2: Extracting structured data using AI")
     print("="*40)
-    all_data = process_all_texts(all_texts)
-    print(f"\nExtracted {len(all_data)} data records")
+    
+    # 各PDFのテキストを処理
+    all_data = []
+    for pdf_data in all_texts:
+        # 辞書からテキストを取得（pdf_dataが辞書の場合）
+        if isinstance(pdf_data, dict):
+            pdf_text = pdf_data.get('text', '')
+            pdf_filename = pdf_data.get('filename', 'unknown.pdf')
+        else:
+            # 直接テキストが返される場合
+            pdf_text = pdf_data
+            pdf_filename = 'unknown.pdf'
+            
+        print(f"Processing text from {pdf_filename} ({len(pdf_text)} characters)")
+        
+        # テキストが存在する場合のみ処理
+        if pdf_text:
+            pdf_results = extract_structured_data(pdf_text)
+            if pdf_results:
+                all_data.extend(pdf_results)
+                print(f"  Extracted {len(pdf_results)} records from {pdf_filename}")
+    
+    print(f"\nTotal extracted data records: {len(all_data)}")
     
     # 処理対象がなければ終了
     if not all_data:

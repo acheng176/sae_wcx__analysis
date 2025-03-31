@@ -108,30 +108,94 @@ def chunk_text(text, max_chunk_size=6000):
         return [text]  # エラー時は元のテキストを1つのチャンクとして返す
 
 def clean_json_response(content):
-    """APIレスポンスのJSONをクリーンアップする"""
+    """APIレスポンスのJSONをクリーンアップする（改良版）"""
     try:
         # Markdown装飾を削除
         content = re.sub(r'```json\s*|\s*```', '', content)
         content = content.strip()
         
+        # 無効な制御文字を置換
+        # ASCII制御文字（0-31）のうち、一部の改行文字（\n, \r, \t）を除いて削除
+        content = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F]', '', content)
+        
         # 一般的なJSON形式の問題を修正
         content = re.sub(r',(\s*[}\]])', r'\1', content)  # 末尾のカンマを削除
         content = re.sub(r'(?<!\\)"(?=(,|\s*[}\]]))', '\\"', content)  # エスケープされていない引用符を修正
+        
+        # JSONの形式を確認
+        # 単一オブジェクトの場合は配列に変換
+        if content.startswith('{') and content.endswith('}'):
+            print("単一オブジェクトを配列に変換します")
+            content = f"[{content}]"
         
         # 配列形式の確認
         if not (content.startswith('[') and content.endswith(']')):
             print("Warning: 無効なJSON形式（配列ではない）")
             content = f"[{content}]"  # 配列でない場合は配列に変換
         
+        # JSONの検証を試みる（検証のみで値は使用しない）
+        try:
+            json.loads(content)
+            print("JSON検証: 成功")
+        except json.JSONDecodeError as e:
+            print(f"JSON検証: 失敗 - {str(e)}")
+            # より積極的な修正を試みる
+            content = fix_json_errors(content)
+        
         return content
     except Exception as e:
         print(f"Error: JSONクリーンアップ中にエラー: {e}")
         return content
 
+def fix_json_errors(content):
+    """JSONデータの一般的なエラーを修正する試み"""
+    try:
+        # 異常な制御文字をさらに削除
+        content = re.sub(r'[\x00-\x1F]+', ' ', content)
+        
+        # 壊れた引用符を修正
+        content = re.sub(r'([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', content)
+        
+        # 値の引用符の問題を修正
+        content = re.sub(r':\s*([a-zA-Z][a-zA-Z0-9_]*)\s*(,|})', r': "\1"\2', content)
+        
+        # 引用符で囲まれていないnull、true、falseは修正しない
+        content = re.sub(r':\s*null\s*(,|})', r': null\1', content)
+        content = re.sub(r':\s*true\s*(,|})', r': true\1', content)
+        content = re.sub(r':\s*false\s*(,|})', r': false\1', content)
+        
+        # 構文エラーが発生しそうな箇所を特定して修正
+        lines = content.split('\n')
+        for i in range(len(lines)):
+            # 行末の不完全な引用符を修正
+            if lines[i].count('"') % 2 == 1:
+                if i < len(lines) - 1:
+                    # 次の行の先頭に引用符を追加
+                    lines[i+1] = '"' + lines[i+1]
+                else:
+                    # 最終行の場合は行末に引用符を追加
+                    lines[i] = lines[i] + '"'
+        
+        content = '\n'.join(lines)
+        
+        # 最後のJSONオブジェクトの閉じ括弧が欠けている場合の修正
+        if content.count('{') > content.count('}'):
+            content = content + '}'
+        
+        # 配列の閉じ括弧が欠けている場合の修正
+        if content.count('[') > content.count(']'):
+            content = content + ']'
+        
+        print("JSONエラーの修正を試みました")
+        return content
+    except Exception as e:
+        print(f"JSONエラー修正中に例外が発生: {e}")
+        return content
+
 def extract_single_chunk(chunk_text):
-    """単一のテキストチャンクからデータを抽出する"""
+    """単一のテキストチャンクからデータを抽出する（改良版）"""
     prompt = f"""
-Extract information from the technical session text below. Return ONLY a JSON object with these exact fields:
+Extract information from the technical session text below. Return ONLY a valid JSON array containing objects with these exact fields:
 
 1. "Session_Name": The main session title at the start of the text
 2. "Session_Code": The code after "Session Code" (e.g., "PFL750")
@@ -164,69 +228,107 @@ Important Rules:
    - Authors and Affiliations follow on subsequent lines
 
 3. Format Rules:
+   - Return a valid JSON array, even if there's only one object
+   - Use double quotes for all strings and field names
    - Each author name MUST end with a comma
    - Each affiliation MUST either end with a semicolon OR be followed by a new paragraph
    - Keep arrays even for single entries
    - Maintain the exact order of authors and their corresponding affiliations
 
-Return ONLY a valid JSON object with these exact field names. No explanation text or markdown formatting.
+Return ONLY a valid JSON array with these exact field names. No explanation text or markdown formatting.
 
 Text to extract from:
 {chunk_text}
 """
     
     try:
-        response = openai.ChatCompletion.create(
-            deployment_id=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
-            messages=[
-                {"role": "system", "content": "You are a precise data extraction assistant. Return only valid JSON arrays with exact field names."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0,
-            max_tokens=2000,
-            n=1
-        )
+        max_retries = 3
+        retry_count = 0
         
-        if not response.choices:
-            print("Error: APIからの応答がありません")
-            return None
-            
-        content = response.choices[0].message.content.strip()
-        print(f"APIレスポンス長: {len(content)} 文字")
-        
-        if not content:
-            print("Error: 空の応答を受信")
-            return None
-        
-        # JSONの整形とパース
-        try:
-            cleaned_content = clean_json_response(content)
-            print(f"クリーニング後の長さ: {len(cleaned_content)} 文字")
-            
-            data = json.loads(cleaned_content)
-            
-            if isinstance(data, list):
-                print(f"Success: {len(data)}件のレコードを抽出")
-                if data:
-                    print(f"最初のレコードのフィールド: {list(data[0].keys())}")
-                return data
-            else:
-                print("Error: 応答が配列形式ではありません")
-                return None
+        while retry_count < max_retries:
+            try:
+                response = openai.ChatCompletion.create(
+                    deployment_id=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
+                    messages=[
+                        {"role": "system", "content": "You are a precise data extraction assistant. Return only valid JSON arrays with exact field names as specified. Ensure the JSON is correctly formatted with no control characters."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0,
+                    max_tokens=2000,
+                    n=1
+                )
                 
-        except json.JSONDecodeError as e:
-            print(f"Error: JSON解析エラー: {str(e)}")
-            print(f"Position: 行 {e.lineno}, 列 {e.colno}")
-            error_context = content[max(0, e.pos-100):min(len(content), e.pos+100)]
-            print(f"Error context:\n{error_context}")
-            return None
-            
+                if not response.choices:
+                    print("Error: APIからの応答がありません")
+                    retry_count += 1
+                    time.sleep(2)
+                    continue
+                    
+                content = response.choices[0].message.content.strip()
+                print(f"APIレスポンス長: {len(content)} 文字")
+                
+                if not content:
+                    print("Error: 空の応答を受信")
+                    retry_count += 1
+                    time.sleep(2)
+                    continue
+                
+                # JSONの整形とパース
+                cleaned_content = clean_json_response(content)
+                print(f"クリーニング後の長さ: {len(cleaned_content)} 文字")
+                
+                try:
+                    data = json.loads(cleaned_content)
+                    
+                    if isinstance(data, list):
+                        print(f"Success: {len(data)}件のレコードを抽出")
+                        if data:
+                            print(f"最初のレコードのフィールド: {list(data[0].keys())}")
+                        return data
+                    else:
+                        print("Error: 応答が配列形式ではありません")
+                        # 単一オブジェクトを配列に変換
+                        if isinstance(data, dict):
+                            print("辞書を配列に変換します")
+                            return [data]
+                        retry_count += 1
+                        time.sleep(2)
+                        
+                except json.JSONDecodeError as e:
+                    print(f"Error: JSON解析エラー: {str(e)}")
+                    print(f"Position: 行 {e.lineno}, 列 {e.colno}")
+                    error_context = cleaned_content[max(0, e.pos-100):min(len(cleaned_content), e.pos+100)]
+                    print(f"Error context:\n{error_context}")
+                    
+                    # 別の修正方法を試す
+                    try:
+                        # シンプルな手法: 単一オブジェクトを抽出
+                        if cleaned_content.strip().startswith('{') and '}' in cleaned_content:
+                            simple_obj = cleaned_content.split('}', 1)[0] + '}'
+                            print("シンプルな抽出手法を試みます")
+                            data = json.loads(simple_obj)
+                            print("単一オブジェクトとして抽出成功")
+                            return [data]
+                    except:
+                        pass
+                    
+                    retry_count += 1
+                    time.sleep(2)
+                
+            except Exception as e:
+                print(f"Error: API呼び出しエラー: {type(e).__name__}")
+                print(f"Message: {str(e)}")
+                if hasattr(e, 'response'):
+                    print(f"Response status: {e.response.status_code}")
+                retry_count += 1
+                time.sleep(3)
+        
+        print(f"Warning: {max_retries}回のリトライ後もデータを抽出できませんでした")
+        return []
+        
     except Exception as e:
-        print(f"Error: API呼び出しエラー: {type(e).__name__}")
-        print(f"Message: {str(e)}")
-        if hasattr(e, 'response'):
-            print(f"Response status: {e.response.status_code}")
-        return None
+        print(f"Critical Error: データ抽出処理全体で例外が発生: {str(e)}")
+        return []
 
 def extract_structured_data(text):
     """テキストから構造化データを抽出する"""
