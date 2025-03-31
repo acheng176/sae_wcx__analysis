@@ -1,0 +1,23 @@
+[
+  {
+    "Session_Name": "Controls for Hybrids and Electric Powertrains Part 1 of 3",
+    "Session_Code": "PFL750",
+    "Abstract": "This session covers propulsion control processes related to achieving stringent market fuel economy, emissions, performance, reliability, and quality demands of hybrid and electric powertrains. Topics include the control, calibration, and diagnostics of the engine, powertrain, and supporting electromechanical subsystems related to energy management. (For Chargers and Charging Electronics Architecture/Design see AE600)",
+    "Room": "Room 140 A",
+    "Session_Time": "8:00 a.m.",
+    "Organizers": "Sumanth Reddy Dadam, Ford Motor Company; Quan Zhou, Univ. of Birmingham; Di Zhu, Ford Motor Company",
+    "Chairperson": "",
+    "Paper_No": "ORAL ONLY",
+    "Presentation_Time": "8:00 a.m.",
+    "Title": "Energy Harvesting from Vehicle Braking and Vibration Using an Axial Flux Generator",
+    "Authors": [
+      "Sunny Rong,",
+      "Jerry Zuo,",
+      "Jianuo Huang,",
+      "Xiaofan Li,"
+    ],
+    "Affiliations": [
+      "University of Michigan;"
+    ]
+  }
+]
