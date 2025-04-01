@@ -15,16 +15,17 @@ AZURE_OPENAI_DEPLOYMENT_NAME = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
 INPUT_FOLDER = "data/input"
 OUTPUT_FOLDER = "output"
 
-# Excel出力設定
+# Excel出力設定のベース
 base_filename = "wcx_sessions"
-current_date = datetime.now().strftime("%Y%m%d")
-OUTPUT_EXCEL_FILE = os.path.join(OUTPUT_FOLDER, f"{base_filename}_{current_date}.xlsx")
+
+# 注: ファイル名は extract_year_from_text 関数により
+# YYYY_base_filename.xlsx 形式に変更されます
 
 # 抽出するデータのカラム
 COLUMNS = [
     "Session_Name", 
     "Session_Code", 
-    "Abstract",
+    "Overview",
     "Paper_No", 
     "Title", 
     "Authors",

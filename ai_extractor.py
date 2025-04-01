@@ -232,7 +232,7 @@ Extract information from the technical session text below. Return ONLY a valid J
 
 1. "Session_Name": The main session title at the start of the text
 2. "Session_Code": The code after "Session Code" (e.g., "PFL750")
-3. "Abstract": The paragraph starting with "This session..."
+3. "Overview": The paragraph starting with "This session..."
 4. "Paper_No": Either a code like "2025-01-8582" or "ORAL ONLY"
 5. "Title": The paper title that appears after the Paper_No on the same line
 6. "Authors": An array of author names. For each author:
@@ -430,17 +430,24 @@ def extract_structured_data(text):
     else:
         return extract_single_chunk(text)
 
-def save_to_json(data, output_file=None):
+# This is a partial update that shows where changes should be made in ai_extractor.py
+
+# Update the save_to_json function to also consider the year in the filename
+def save_to_json(data, output_file=None, year=None):
     """データをJSONファイルとして保存する"""
     try:
         # 日付を含むファイル名を生成
         if output_file is None:
             # 入力ファイル名から拡張子を除いた部分を取得
             base_name = os.path.splitext(os.path.basename("input.txt"))[0]
-            # 現在の日付を取得
-            current_date = datetime.now().strftime("%Y%m%d")
-            # 新しいファイル名を生成
-            output_file = f"{base_name}_{current_date}.json"
+            
+            if year:
+                # 年を含むファイル名を生成
+                output_file = f"{year}_{base_name}.json"
+            else:
+                # 従来の日付形式を使用
+                current_date = datetime.now().strftime("%Y%m%d")
+                output_file = f"{base_name}_{current_date}.json"
         
         # 出力ディレクトリの作成
         output_dir = "output"
@@ -458,6 +465,7 @@ def save_to_json(data, output_file=None):
         print(f"Error: ファイル保存中にエラー: {e}")
         return None
 
+# メイン実行部分を更新 (if __name__ == "__main__": 以下の部分)
 if __name__ == "__main__":
     try:
         # テキストファイルから入力を読み込む
@@ -465,16 +473,33 @@ if __name__ == "__main__":
         with open(input_file, 'r', encoding='utf-8') as f:
             input_text = f.read()
         
+        # excel_writer モジュールをインポート
+        from excel_writer import write_to_excel, extract_year_from_text
+        
+        # 年を抽出
+        year = extract_year_from_text(input_text)
+        print(f"文書から抽出した年: {year}")
+        
         # データ抽出の実行
         results = extract_structured_data(input_text)
         
         if results:
-            # 結果を保存
-            output_path = save_to_json(results)
+            # 結果をJSONに保存（年を含む）
+            output_path = save_to_json(results, year=year)
+            
+            # 結果をExcelに保存（元のテキストを渡す）
+            try:
+                from config import OUTPUT_FOLDER, base_filename
+                excel_output = os.path.join(OUTPUT_FOLDER, f"{base_filename}.xlsx")
+                excel_file = write_to_excel(results, excel_output, input_text)
+                print(f"Excelファイルを保存しました: {excel_file}")
+            except Exception as e:
+                print(f"Excel出力中にエラー: {e}")
+            
             if output_path:
-                print(f"処理が完了しました。出力ファイル: {output_path}")
+                print(f"処理が完了しました。JSONファイル: {output_path}")
             else:
-                print("Error: ファイルの保存に失敗しました")
+                print("Error: JSONファイルの保存に失敗しました")
         else:
             print("Error: データの抽出に失敗しました")
             
