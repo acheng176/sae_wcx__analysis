@@ -88,11 +88,15 @@ def write_to_excel(data, output_file, input_text=""):
     
     # DataFrameに変換
     df = pd.DataFrame(clean_data)
+    
+    # Noカラムを追加（1からの連番）
+    df.insert(0, 'No', range(1, len(df) + 1))
+    
     print(f"Created DataFrame with {len(df)} rows and {len(df.columns)} columns")
     print(f"DataFrame columns: {df.columns.tolist()}")
     
-    # 列の順序を指定
-    columns = config.COLUMNS + ["Source File"]
+    # 列の順序を指定（Noを先頭に追加）
+    columns = ['No'] + config.COLUMNS + ["Source File"]
     
     # 指定の列が存在する場合のみ選択
     available_columns = [col for col in columns if col in df.columns]
