@@ -20,13 +20,19 @@ def split_text(text, max_chars=1500):
     for session in sessions:
         chunk = session.group(0)
         
-        # 現在のチャンクのサイズをチェック
-        if len(current_chunk) + len(chunk) > max_chars:
+        # セッションコードを抽出
+        session_code_match = re.search(r'Session Code\s+([A-Z0-9]+)', chunk)
+        if session_code_match:
+            # 現在のチャンクに追加
             if current_chunk:
+                current_chunk += "\n" + chunk
+            else:
+                current_chunk = chunk
+            
+            # チャンクサイズをチェック
+            if len(current_chunk) > max_chars:
                 chunks.append(current_chunk)
-            current_chunk = chunk
-        else:
-            current_chunk += ("\n" if current_chunk else "") + chunk
+                current_chunk = ""
     
     # 最後のチャンクを追加
     if current_chunk:
@@ -40,6 +46,18 @@ def split_text(text, max_chars=1500):
         codes = re.findall(r'Session Code\s+([A-Z0-9]+)', chunk)
         if codes:
             print(f"含まれるセッションコード: {', '.join(codes)}")
+        # 論文番号を表示
+        papers = re.findall(r'Paper No\.\s+([A-Z0-9-]+|ORAL ONLY)', chunk)
+        if papers:
+            print(f"含まれる論文番号: {', '.join(papers)}")
+        # パネルディスカッションを表示
+        panel_discussions = re.findall(r'Panel Discussion:.*?(?=\n)', chunk)
+        if panel_discussions:
+            print(f"含まれるパネルディスカッション: {', '.join(panel_discussions)}")
+        # 概要を表示
+        overviews = re.findall(r'Room\n(.*?)(?=\n(?:Moderators|Organizers|Panelists))', chunk, re.DOTALL)
+        if overviews:
+            print(f"含まれる概要: {overviews[0][:100]}...")
     
     return chunks
 
@@ -215,170 +233,63 @@ def fix_json_errors(content):
         print(f"JSONエラー修正中に例外が発生: {e}")
         return content
 
-def extract_single_paper(chunk_text):
-    """単一の論文情報からデータを抽出する"""
-    prompt = f"""
-Extract information from the technical session text below following these precise rules:
+def get_extraction_prompt(chunk_text):
+    """データ抽出用のプロンプトを生成する"""
+    return f"""
+Extract session information from the following text. Each session is separated by "Session Code".
 
-1. Session Information:
-   - Session_Name: Extract the line ABOVE "Session Code" (e.g., "Systems Engineering for Automotive - Part 1 of 2")
-   - Session_Code: Extract ONLY the code that appears immediately after "Session Code" (e.g., "SS111"). Ignore any session codes mentioned elsewhere in the text
-   - Overview: Extract the ENTIRE paragraph that appears below the "Room" line and before "Organizers" or "Time". If there is no text between "Room" and "Organizers", use "No data". Do not extract paper titles or other information as overview.
-   - IMPORTANT: Each new "Session Code" indicates the start of a new session. DO NOT mix information from different sessions.
-   - IMPORTANT: When you see a new "Session Code", all previous session information should be discarded.
+Extraction Rules:
+1. Session Name (session_name):
+   - Extract the line ABOVE "Session Code"
+   - Example: "Systems Engineering for Automotive - Part 1 of 2"
 
-2. Paper Information (multiple papers may exist per session):
-   - Paper_No and Title appear in a table format with these patterns:
-     Example 1:
-     Time        Paper No.        Title
-     1:30 p.m.   2024-01-2501    Scenario-Based Development and Meta-Level Design for Automotive Systems: An Explanatory Study
-     2:00 p.m.   ORAL ONLY       Front Zone Control Unit for Propulsion and Chassis Domains in a Zonal E/E Architecture
+2. Session Overview (overview):
+   - Extract the paragraph that appears after the "Room" line and before lines like "Moderators", "Organizers", or "Panelists"
+   - If the session is a panel discussion (session name starts with "Panel Discussion:"), set overview to "panel discussion"
+   - If no paragraph exists and it's not a panel discussion, use "no data"
+   - Example: "This session focuses on the latest developments in automotive systems engineering..."
 
-     Example 2:
-     Time        Paper No.        Title
-     2:00 p.m.   ORAL ONLY       Front Zone Control Unit for Propulsion and Chassis Domains in a Zonal E/E Architecture
-   
-   - Paper_No: Extract either:
-     * The numeric code in format "20XX-XX-XXXX"
-     * The text "ORAL ONLY"
-   - Title: Extract ONLY the title that appears in the same session as the current Session_Code
-   - IMPORTANT: Do not extract titles from different sessions
-   
-3. Author Information:
-   - Main_Author_Group: Extract all names that:
-     * Appear in the first line below the Title
-     * End with a comma
-     * Come BEFORE the first semicolon or paragraph break
-     * IGNORE if the line starts with "Organizers -"
-     * Example: "Julian Knödler, Philip Muhl,"
-   - Main_Author_Affiliation: Extract institution names that:
-     * Follow the main authors
-     * End with a semicolon or paragraph break
-     * Example: "Porsche AG;"
-   
-   - Co_Author_Group: Extract all names that:
-     * Appear in the same paragraph as main authors
-     * Come AFTER the first semicolon
-     * End with a comma
-     * Example: "Eric Sax, Lutz Eckstein,"
-   - Co_Author_Affiliation: Extract institution names that:
-     * Follow each co-author group
-     * End with a semicolon or paragraph break
-     * Example: "Karlsruher Institute of Technology (KIT); RWTH Aachen University"
+3. Session Code (session_code):
+   - Extract the code that appears immediately after "Session Code"
+   - This code should be associated with the papers that appear in the same section
+   - Example: "SS111"
 
-4. Session Organization:
-   - Organizers: Extract the complete text after "Organizers -" that appears below the Overview
-     * Include all names and affiliations as they appear
-     * Example: "Anne O'Neil, AOC Systems Consortium; Aleczander Jackson, Enola Technologies; Gary Rushton, General Motors LLC"
-   - Chairperson: Extract the complete text after "Chairperson:" if present
-     * Include all names and affiliations as they appear
-     * Example: "Eric Krueger, General Motors LLC"
+4. Paper Information:
+   - Paper Number (paper_no): Extract from the "Paper No." column in table format
+   - Title (title): Extract from the "Title" column in table format
+   - For panel discussions, set both to "no data"
+   - IMPORTANT: Each paper should be associated with the session code that appears in the same section
 
-Output Format Rules:
-1. Maintain exact punctuation (commas, semicolons) as shown in the examples
-2. Keep original text case (do not convert to upper/lower case)
-4. For missing fields, use exactly "No data" (not "N/A" or empty string)
-5. IGNORE and DO NOT extract any entries marked as "BREAK"
-6. Remove any extra spaces at the start or end of fields
-7. Keep organization names exactly as written, including abbreviations (LLC, AG, etc.)
+5. Author Information:
+   - Main Author Group (main_author_group): Extract author names from the line after the paper title until the first semicolon
+   - Main Author Affiliation (main_author_affiliation): Extract the institution name from the line after main authors, ending with a semicolon
+   - Co-Author Group (co_author_group): Extract author names from the line after main author affiliation until the next semicolon
+   - Co-Author Affiliation (co_author_affiliation): Extract the institution name from the line after co-authors, ending with a semicolon
 
-Return the extracted data in this exact JSON format:
-{{
-    "Session_Name": "string",
-    "Session_Code": "string",
-    "Overview": "string",
-    "Paper_No": "string",
-    "Title": "string",
-    "Main_Author_Group": "string",
-    "Main_Author_Affiliation": "string",
-    "Co_Author_Group": "string",
-    "Co_Author_Affiliation": "string",
-    "Organizers": "string",
-    "Chairperson": "string"
-}}
+6. Session Organization:
+   - Organizers (organizers): Extract the complete text after "Organizers -"
+   - Chairperson (chairperson): Extract the complete text after "Chairperson:"
+
+Output Format:
+[
+    {{
+        "session_name": "Session Name",
+        "session_code": "Session Code",
+        "overview": "Session Overview",
+        "paper_no": "Paper Number",
+        "title": "Paper Title",
+        "main_author_group": "Main Author Group",
+        "main_author_affiliation": "Main Author Affiliation",
+        "co_author_group": "Co-Author Group",
+        "co_author_affiliation": "Co-Author Affiliation",
+        "organizers": "Organizers",
+        "chairperson": "Chairperson"
+    }}
+]
 
 Text to extract from:
 {chunk_text}
 """
-    max_retries = 5  # リトライ回数を増やす
-    retry_count = 0
-    retry_delay = 5  # リトライ間隔を5秒に設定
-    
-    while retry_count < max_retries:
-        try:
-            response = openai.ChatCompletion.create(
-                deployment_id=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
-                messages=[
-                    {"role": "system", "content": "You are a precise data extraction assistant. Return only valid JSON arrays with exact field names as specified. Ensure the JSON is correctly formatted with no control characters or backslashes in strings."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0,
-                max_tokens=2000,
-                n=1
-            )
-            
-            if not response.choices:
-                print(f"Error: APIからの応答がありません (リトライ {retry_count + 1}/{max_retries})")
-                retry_count += 1
-                time.sleep(retry_delay)
-                continue
-            
-            content = response.choices[0].message.content.strip()
-            print(f"APIレスポンス長: {len(content)} 文字")
-            
-            if not content:
-                print(f"Error: 空の応答を受信 (リトライ {retry_count + 1}/{max_retries})")
-                retry_count += 1
-                time.sleep(retry_delay)
-                continue
-            
-            # JSONの整形とパース
-            cleaned_content = clean_json_response(content)
-            print(f"クリーニング後の長さ: {len(cleaned_content)} 文字")
-            
-            try:
-                data = json.loads(cleaned_content)
-                
-                if isinstance(data, list):
-                    print(f"Success: {len(data)}件のレコードを抽出")
-                    if data:
-                        print(f"最初のレコードのフィールド: {list(data[0].keys())}")
-                    return data
-                
-                print(f"Error: 応答が配列形式ではありません (リトライ {retry_count + 1}/{max_retries})")
-                if isinstance(data, dict):
-                    print("辞書を配列に変換します")
-                    return [data]
-                retry_count += 1
-                time.sleep(retry_delay)
-                    
-            except json.JSONDecodeError as e:
-                print(f"Error: JSON解析エラー: {str(e)}")
-                print(f"Position: 行 {e.lineno}, 列 {e.colno}")
-                error_context = cleaned_content[max(0, e.pos-100):min(len(cleaned_content), e.pos+100)]
-                print(f"Error context:\n{error_context}")
-                
-                try:
-                    simple_obj = '{' + cleaned_content.split('{', 1)[1].split('}', 1)[0] + '}'
-                    print("シンプルな抽出手法を試みます")
-                    data = json.loads(simple_obj)
-                    print("単一オブジェクトとして抽出成功")
-                    return [data]
-                except:
-                    print(f"シンプルな抽出にも失敗しました (リトライ {retry_count + 1}/{max_retries})")
-                    retry_count += 1
-                    time.sleep(retry_delay)
-                
-        except Exception as e:
-            print(f"Error: API呼び出しエラー: {type(e).__name__}")
-            print(f"Message: {str(e)}")
-            if hasattr(e, 'response'):
-                print(f"Response status: {e.response.status_code}")
-            retry_count += 1
-            time.sleep(retry_delay)
-    
-    print(f"Warning: {max_retries}回のリトライ後もデータを抽出できませんでした")
-    return []
 
 def extract_structured_data(text):
     """テキストから構造化データを抽出する"""
@@ -409,35 +320,7 @@ def extract_structured_data(text):
                     print(f"このチャンクに含まれるセッションコード: {', '.join(session_codes)}")
                 
                 # プロンプトの生成
-                prompt = f"""
-以下のテキストからセッション情報を抽出してください。各セッションは"Session Code"で区切られています。
-
-抽出ルール:
-1. 各セッションの情報を個別に抽出
-2. セッション名は"Session Code"の直前の行から抽出
-3. セッションコードは"Session Code"の直後のコードを抽出
-4. 論文情報は各セッション内の表形式から抽出
-5. 著者情報は論文タイトルの直後の行から抽出
-
-出力形式:
-[
-    {{
-        "session_name": "セッション名",
-        "session_code": "セッションコード",
-        "paper_no": "論文番号",
-        "title": "論文タイトル",
-        "main_author_group": "主著者グループ",
-        "main_author_affiliation": "主著者の所属",
-        "co_author_group": "共著者グループ",
-        "co_author_affiliation": "共著者の所属",
-        "organizers": "オーガナイザー",
-        "chairperson": "議長"
-    }}
-]
-
-テキスト:
-{chunk}
-"""
+                prompt = get_extraction_prompt(chunk)
                 
                 # API呼び出し
                 response = openai.ChatCompletion.create(
@@ -490,7 +373,16 @@ def extract_structured_data(text):
         print(f"Error: データ抽出処理全体でエラーが発生: {str(e)}")
         return []
 
-def save_to_json(data, output_file=None, year=None):
+def extract_year_from_text(text):
+    """テキストから年を抽出する"""
+    # 年を表すパターン（4桁の数字）
+    year_pattern = r'\b(20\d{2})\b'
+    year_match = re.search(year_pattern, text)
+    if year_match:
+        return year_match.group(1)
+    return None
+
+def save_to_json(data, output_file=None):
     """データをJSONファイルとして保存する"""
     try:
         # 日付を含むファイル名を生成
@@ -498,9 +390,11 @@ def save_to_json(data, output_file=None, year=None):
             # 入力ファイル名から拡張子を除いた部分を取得
             base_name = os.path.splitext(os.path.basename("input.txt"))[0]
             
+            # テキストから年を抽出
+            year = extract_year_from_text(data[0].get('session_code', '')) if data else None
             if year:
                 # 年を含むファイル名を生成
-                output_file = f"{year}_{base_name}.json"
+                output_file = f"{year}_wcx_sessions.json"
             else:
                 # 従来の日付形式を使用
                 current_date = datetime.now().strftime("%Y%m%d")
@@ -541,10 +435,10 @@ if __name__ == "__main__":
         results = extract_structured_data(input_text)
         
         if results:
-            # 結果をJSONに保存（年を含む）
-            output_path = save_to_json(results, year=year)
+            # 結果をJSONに保存
+            output_path = save_to_json(results)
             
-            # 結果をExcelに保存（元のテキストを渡す）
+            # 結果をExcelに保存
             try:
                 from config import OUTPUT_FOLDER, base_filename
                 excel_output = os.path.join(OUTPUT_FOLDER, f"{base_filename}.xlsx")

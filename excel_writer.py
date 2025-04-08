@@ -60,6 +60,7 @@ def write_to_excel(data, output_file, source_text):
             'no',
             'session_name',
             'session_code',
+            'overview',
             'paper_no',
             'title',
             'main_author_group',
@@ -67,8 +68,7 @@ def write_to_excel(data, output_file, source_text):
             'co_author_group',
             'co_author_affiliation',
             'organizers',
-            'chairperson',
-            'sourcefile'
+            'chairperson'
         ]
         
         # 必要なカラムが存在しない場合は追加
@@ -81,7 +81,6 @@ def write_to_excel(data, output_file, source_text):
         
         # データの整形
         df['no'] = range(1, len(df) + 1)
-        df['sourcefile'] = os.path.basename(source_text)
         
         # エクセルファイルに書き込み
         df.to_excel(output_file, index=False, engine='openpyxl')
