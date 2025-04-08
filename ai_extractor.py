@@ -7,58 +7,88 @@ import textwrap
 from datetime import datetime
 import time  # timeモジュールを追加
 
-def split_text(text, max_chars=1500):
+def validate_session_name(session_name, session_code, chunk):
+    """セッション名の妥当性を検証"""
+    # 空のセッション名をチェック
+    if not session_name.strip():
+        print(f"Warning: 空のセッション名 (Session Code: {session_code})")
+        return False
+    
+    # セッション名が異常に長いケースをチェック
+    if len(session_name) > 200:  # 適切な最大長を設定
+        print(f"Warning: セッション名が異常に長い: {session_name[:50]}...")
+        return False
+    
+    # セッション名に不適切な文字列が含まれていないかチェック
+    invalid_patterns = [
+        'Paper No',
+        'Time',
+        'Title',
+        'Room',
+        'Organizers',
+        'Chairperson'
+    ]
+    
+    for pattern in invalid_patterns:
+        if pattern in session_name:
+            print(f"Warning: セッション名に不適切な文字列が含まれている: {session_name}")
+            return False
+    
+    return True
+
+def split_text(text):
     """テキストをセッション単位で分割する"""
     # セッションの区切りパターン
-    session_pattern = r'(?:^|\n)(?:.*?\n)?Session Code\s+[A-Z0-9]+.*?(?=(?:\n(?:.*?\n)?Session Code\s+[A-Z0-9]+|$))'
+    # Session Codeとその直前の行を含めて検出
+    session_pattern = r'([^\n]*)\n\s*Session Code\s+([A-Z0-9]+)'
+    sessions = re.finditer(session_pattern, text, re.MULTILINE)
     
-    # セッション単位で分割
-    sessions = re.finditer(session_pattern, text, re.DOTALL)
     chunks = []
-    current_chunk = ""
+    current_position = 0
     
-    for session in sessions:
-        chunk = session.group(0)
+    for match in sessions:
+        session_name = match.group(1).strip()
+        session_code = match.group(2)
+        start = match.start()
         
-        # セッションコードを抽出
-        session_code_match = re.search(r'Session Code\s+([A-Z0-9]+)', chunk)
-        if session_code_match:
-            # 現在のチャンクに追加
-            if current_chunk:
-                current_chunk += "\n" + chunk
-            else:
-                current_chunk = chunk
-            
-            # チャンクサイズをチェック
-            if len(current_chunk) > max_chars:
-                chunks.append(current_chunk)
-                current_chunk = ""
-    
-    # 最後のチャンクを追加
-    if current_chunk:
-        chunks.append(current_chunk)
-    
-    # デバッグ情報
-    print(f"\nテキストを {len(chunks)} チャンクに分割しました")
-    for i, chunk in enumerate(chunks, 1):
-        print(f"\nチャンク {i}: {len(chunk)} 文字")
-        # セッションコードを表示
-        codes = re.findall(r'Session Code\s+([A-Z0-9]+)', chunk)
-        if codes:
-            print(f"含まれるセッションコード: {', '.join(codes)}")
+        # セッション名の妥当性をチェック
+        if not validate_session_name(session_name, session_code, text[start:]):
+            print(f"Warning: セッション名の検証に失敗しました: {session_name}")
+            # 問題のあるセッション名の場合、直前の有効な行を探す
+            lines_before = text[:start].split('\n')
+            for line in reversed(lines_before):
+                if line.strip() and validate_session_name(line.strip(), session_code, text[start:]):
+                    session_name = line.strip()
+                    print(f"Info: 代替のセッション名を使用: {session_name}")
+                    break
+        
+        # 次のSession Codeまでの内容を取得
+        next_match = re.search(r'\nSession Code\s+[A-Z0-9]+', text[match.end():])
+        end = match.end() + next_match.start() if next_match else len(text)
+        
+        # セッションの内容を抽出（Session Code行から開始）
+        session_content = text[match.start(2):end].strip()
+        
+        # チャンクを構築
+        chunk = f"{session_name}\nSession Code {session_code}\n{session_content}"
+        chunks.append(chunk)
+        
+        # デバッグ情報
+        print(f"\nセッション検出:")
+        print(f"Session Code: {session_code}")
+        print(f"Session Name: {session_name}")
+        print(f"チャンクサイズ: {len(chunk)} 文字")
+        
         # 論文番号を表示
         papers = re.findall(r'Paper No\.\s+([A-Z0-9-]+|ORAL ONLY)', chunk)
         if papers:
             print(f"含まれる論文番号: {', '.join(papers)}")
-        # パネルディスカッションを表示
-        panel_discussions = re.findall(r'Panel Discussion:.*?(?=\n)', chunk)
-        if panel_discussions:
-            print(f"含まれるパネルディスカッション: {', '.join(panel_discussions)}")
-        # 概要を表示
-        overviews = re.findall(r'Room\n(.*?)(?=\n(?:Moderators|Organizers|Panelists))', chunk, re.DOTALL)
-        if overviews:
-            print(f"含まれる概要: {overviews[0][:100]}...")
+        
+        # セッションの境界を表示
+        content_preview = session_content[:100] + "..." if len(session_content) > 100 else session_content
+        print(f"セッション内容プレビュー:\n{content_preview}")
     
+    print(f"\n合計 {len(chunks)} セッションを検出")
     return chunks
 
 def setup_azure_openai():
@@ -236,29 +266,27 @@ def fix_json_errors(content):
 def get_extraction_prompt(chunk_text):
     """データ抽出用のプロンプトを生成する"""
     return f"""
-Extract session information from the following text. Each session is separated by "Session Code".
+Extract session information from the following text. Each session starts with "Session Code" and ends before the next "Session Code".
 
 Extraction Rules:
 1. Session Name (session_name):
-   - Extract the line ABOVE "Session Code"
-   - Example: "Systems Engineering for Automotive - Part 1 of 2"
+   - Extract ONLY the line that appears IMMEDIATELY ABOVE the "Session Code" line
+   - The line should be a valid session title (not contain "Paper No", "Time", "Title", etc.)
+   - Example: "Fatigue Analysis and Design - Part 1 of 3"
 
 2. Session Overview (overview):
    - Extract the paragraph that appears after the "Room" line and before lines like "Moderators", "Organizers", or "Panelists"
-   - If the session is a panel discussion (session name starts with "Panel Discussion:"), set overview to "panel discussion"
-   - If no paragraph exists and it's not a panel discussion, use "no data"
-   - Example: "This session focuses on the latest developments in automotive systems engineering..."
+   - If no such paragraph exists, use "no data"
+   - Example: "1 customer usage development 2 structural stress generation..."
 
 3. Session Code (session_code):
    - Extract the code that appears immediately after "Session Code"
-   - This code should be associated with the papers that appear in the same section
    - Example: "SS111"
 
 4. Paper Information:
-   - Paper Number (paper_no): Extract from the "Paper No." column in table format
+   - Paper Number (paper_no): Extract from the "Paper No." column in table format (including "ORAL ONLY")
    - Title (title): Extract from the "Title" column in table format
-   - For panel discussions, set both to "no data"
-   - IMPORTANT: Each paper should be associated with the session code that appears in the same section
+   - IMPORTANT: Only extract papers that appear in the current session's content
 
 5. Author Information:
    - Main Author Group (main_author_group): Extract author names from the line after the paper title until the first semicolon
@@ -375,30 +403,30 @@ def extract_structured_data(text):
 
 def extract_year_from_text(text):
     """テキストから年を抽出する"""
-    # 年を表すパターン（4桁の数字）
-    year_pattern = r'\b(20\d{2})\b'
+    # テキストの最初の4桁の数字を年として抽出
+    year_pattern = r'^.*?(\d{4})'  # テキストの先頭から最初に出現する4桁の数字
     year_match = re.search(year_pattern, text)
     if year_match:
-        return year_match.group(1)
+        year = year_match.group(1)
+        if year.startswith('20'):  # 2000年代の年のみ有効とする
+            return year
     return None
 
 def save_to_json(data, output_file=None):
     """データをJSONファイルとして保存する"""
     try:
-        # 日付を含むファイル名を生成
-        if output_file is None:
-            # 入力ファイル名から拡張子を除いた部分を取得
-            base_name = os.path.splitext(os.path.basename("input.txt"))[0]
-            
-            # テキストから年を抽出
-            year = extract_year_from_text(data[0].get('session_code', '')) if data else None
-            if year:
-                # 年を含むファイル名を生成
-                output_file = f"{year}_wcx_sessions.json"
-            else:
-                # 従来の日付形式を使用
-                current_date = datetime.now().strftime("%Y%m%d")
-                output_file = f"{base_name}_{current_date}.json"
+        # 入力ファイルから年を抽出
+        with open("input.txt", 'r', encoding='utf-8') as f:
+            input_text = f.read()
+            year = extract_year_from_text(input_text)
+        
+        if year:
+            # 年を含むファイル名を生成
+            output_file = f"{year}_wcx_sessions.json"
+        else:
+            # 年が取得できない場合は現在の日付を使用
+            current_date = datetime.now().strftime("%Y%m%d")
+            output_file = f"wcx_sessions_{current_date}.json"
         
         # 出力ディレクトリの作成
         output_dir = "output"
@@ -424,12 +452,12 @@ if __name__ == "__main__":
         with open(input_file, 'r', encoding='utf-8') as f:
             input_text = f.read()
         
-        # excel_writer モジュールをインポート
-        from excel_writer import write_to_excel, extract_year_from_text
-        
-        # 年を抽出
+        # 年を抽出して表示
         year = extract_year_from_text(input_text)
-        print(f"文書から抽出した年: {year}")
+        if year:
+            print(f"文書から抽出した年: {year}")
+        else:
+            print("Warning: 文書から年を抽出できませんでした")
         
         # データ抽出の実行
         results = extract_structured_data(input_text)
@@ -440,9 +468,9 @@ if __name__ == "__main__":
             
             # 結果をExcelに保存
             try:
-                from config import OUTPUT_FOLDER, base_filename
-                excel_output = os.path.join(OUTPUT_FOLDER, f"{base_filename}.xlsx")
-                excel_file = write_to_excel(results, excel_output, input_text)
+                from excel_writer import write_to_excel
+                excel_output = os.path.join("output", f"{year}_wcx_sessions.xlsx" if year else "wcx_sessions.xlsx")
+                excel_file = write_to_excel(results, excel_output)
                 print(f"Excelファイルを保存しました: {excel_file}")
             except Exception as e:
                 print(f"Excel出力中にエラー: {e}")
