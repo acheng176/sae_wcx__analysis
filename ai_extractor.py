@@ -7,49 +7,39 @@ import textwrap
 from datetime import datetime
 import time  # timeモジュールを追加
 
-def split_text(text, max_chars=2000):
-    """テキストを適切なサイズに分割する"""
-    # セッションコードで分割
-    sessions = re.split(r'(Session Code [A-Z0-9]+)', text)
+def split_text(text, max_chars=1500):
+    """テキストをセッション単位で分割する"""
+    # セッションの区切りパターン
+    session_pattern = r'(?:^|\n)(?:.*?\n)?Session Code\s+[A-Z0-9]+.*?(?=(?:\n(?:.*?\n)?Session Code\s+[A-Z0-9]+|$))'
+    
+    # セッション単位で分割
+    sessions = re.finditer(session_pattern, text, re.DOTALL)
     chunks = []
     current_chunk = ""
     
-    for i in range(0, len(sessions)):
-        if i > 0 and sessions[i].startswith("Session Code"):
-            # セッションコードを前のチャンクに含める
+    for session in sessions:
+        chunk = session.group(0)
+        
+        # 現在のチャンクのサイズをチェック
+        if len(current_chunk) + len(chunk) > max_chars:
             if current_chunk:
-                chunks.append(current_chunk.strip())
-            current_chunk = sessions[i]
-            if i + 1 < len(sessions):
-                current_chunk += sessions[i + 1]
-        elif i == 0 or not sessions[i-1].startswith("Session Code"):
-            if len(current_chunk) + len(sessions[i]) > max_chars:
-                # さらに小さく分割
-                sentences = re.split(r'(?<=[.!?])\s+', sessions[i])
-                temp_chunk = ""
-                for sentence in sentences:
-                    if len(temp_chunk) + len(sentence) > max_chars:
-                        if temp_chunk:
-                            chunks.append(temp_chunk.strip())
-                        temp_chunk = sentence
-                    else:
-                        temp_chunk += " " + sentence if temp_chunk else sentence
-                if temp_chunk:
-                    current_chunk += temp_chunk
+                chunks.append(current_chunk)
+            current_chunk = chunk
         else:
-                current_chunk += sessions[i]
+            current_chunk += ("\n" if current_chunk else "") + chunk
     
+    # 最後のチャンクを追加
     if current_chunk:
-        chunks.append(current_chunk.strip())
-    
-    # 空のチャンクを除去
-    chunks = [chunk for chunk in chunks if chunk.strip()]
+        chunks.append(current_chunk)
     
     # デバッグ情報
-    print(f"テキストを {len(chunks)} チャンクに分割しました")
-    for i, chunk in enumerate(chunks):
-        print(f"チャンク {i+1}: {len(chunk)} 文字")
-        print(f"プレビュー: {chunk[:100]}...\n")
+    print(f"\nテキストを {len(chunks)} チャンクに分割しました")
+    for i, chunk in enumerate(chunks, 1):
+        print(f"\nチャンク {i}: {len(chunk)} 文字")
+        # セッションコードを表示
+        codes = re.findall(r'Session Code\s+([A-Z0-9]+)', chunk)
+        if codes:
+            print(f"含まれるセッションコード: {', '.join(codes)}")
     
     return chunks
 
@@ -233,14 +223,17 @@ Extract information from the technical session text below following these precis
 1. Session Information:
    - Session_Name: Extract the line ABOVE "Session Code" (e.g., "Systems Engineering for Automotive - Part 1 of 2")
    - Session_Code: Extract ONLY the code that appears immediately after "Session Code" (e.g., "SS111"). Ignore any session codes mentioned elsewhere in the text
-   - Overview: Extract the ENTIRE paragraph that appears below the "Room" line and before "Organizers" or "Time" (e.g., "A Systems Engineering approach recognizes...")
+   - Overview: Extract the ENTIRE paragraph that appears below the "Room" line and before "Organizers" or "Time". If there is no text between "Room" and "Organizers", use "No data". Do not extract paper titles or other information as overview.
+   - IMPORTANT: Each new "Session Code" indicates the start of a new session. DO NOT mix information from different sessions.
+   - IMPORTANT: When you see a new "Session Code", all previous session information should be discarded.
 
 2. Paper Information (multiple papers may exist per session):
    - Paper_No and Title appear in a table format with these patterns:
      Example 1:
      Time        Paper No.        Title
      1:30 p.m.   2024-01-2501    Scenario-Based Development and Meta-Level Design for Automotive Systems: An Explanatory Study
-     
+     2:00 p.m.   ORAL ONLY       Front Zone Control Unit for Propulsion and Chassis Domains in a Zonal E/E Architecture
+
      Example 2:
      Time        Paper No.        Title
      2:00 p.m.   ORAL ONLY       Front Zone Control Unit for Propulsion and Chassis Domains in a Zonal E/E Architecture
@@ -248,7 +241,8 @@ Extract information from the technical session text below following these precis
    - Paper_No: Extract either:
      * The numeric code in format "20XX-XX-XXXX"
      * The text "ORAL ONLY"
-   - Title: Extract the complete text that appears on the same line after Paper_No
+   - Title: Extract ONLY the title that appears in the same session as the current Session_Code
+   - IMPORTANT: Do not extract titles from different sessions
    
 3. Author Information:
    - Main_Author_Group: Extract all names that:
@@ -306,93 +300,85 @@ Return the extracted data in this exact JSON format:
 Text to extract from:
 {chunk_text}
 """
-
-    try:
-        max_retries = 3
-        retry_count = 0
-        
-        while retry_count < max_retries:
+    max_retries = 5  # リトライ回数を増やす
+    retry_count = 0
+    retry_delay = 5  # リトライ間隔を5秒に設定
+    
+    while retry_count < max_retries:
+        try:
+            response = openai.ChatCompletion.create(
+                deployment_id=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
+                messages=[
+                    {"role": "system", "content": "You are a precise data extraction assistant. Return only valid JSON arrays with exact field names as specified. Ensure the JSON is correctly formatted with no control characters or backslashes in strings."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0,
+                max_tokens=2000,
+                n=1
+            )
+            
+            if not response.choices:
+                print(f"Error: APIからの応答がありません (リトライ {retry_count + 1}/{max_retries})")
+                retry_count += 1
+                time.sleep(retry_delay)
+                continue
+            
+            content = response.choices[0].message.content.strip()
+            print(f"APIレスポンス長: {len(content)} 文字")
+            
+            if not content:
+                print(f"Error: 空の応答を受信 (リトライ {retry_count + 1}/{max_retries})")
+                retry_count += 1
+                time.sleep(retry_delay)
+                continue
+            
+            # JSONの整形とパース
+            cleaned_content = clean_json_response(content)
+            print(f"クリーニング後の長さ: {len(cleaned_content)} 文字")
+            
             try:
-                response = openai.ChatCompletion.create(
-                    deployment_id=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
-                    messages=[
-                        {"role": "system", "content": "You are a precise data extraction assistant. Return only valid JSON arrays with exact field names as specified. Ensure the JSON is correctly formatted with no control characters or backslashes in strings."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0,
-                    max_tokens=2000,
-                    n=1
-                )
+                data = json.loads(cleaned_content)
                 
-                if not response.choices:
-                    print("Error: APIからの応答がありません")
-                    retry_count += 1
-                    time.sleep(2)
-                    continue
+                if isinstance(data, list):
+                    print(f"Success: {len(data)}件のレコードを抽出")
+                    if data:
+                        print(f"最初のレコードのフィールド: {list(data[0].keys())}")
+                    return data
                 
-                content = response.choices[0].message.content.strip()
-                print(f"APIレスポンス長: {len(content)} 文字")
-                
-                if not content:
-                    print("Error: 空の応答を受信")
-                    retry_count += 1
-                    time.sleep(2)
-                    continue
-                
-                # JSONの整形とパース
-                cleaned_content = clean_json_response(content)
-                print(f"クリーニング後の長さ: {len(cleaned_content)} 文字")
+                print(f"Error: 応答が配列形式ではありません (リトライ {retry_count + 1}/{max_retries})")
+                if isinstance(data, dict):
+                    print("辞書を配列に変換します")
+                    return [data]
+                retry_count += 1
+                time.sleep(retry_delay)
+                    
+            except json.JSONDecodeError as e:
+                print(f"Error: JSON解析エラー: {str(e)}")
+                print(f"Position: 行 {e.lineno}, 列 {e.colno}")
+                error_context = cleaned_content[max(0, e.pos-100):min(len(cleaned_content), e.pos+100)]
+                print(f"Error context:\n{error_context}")
                 
                 try:
-                    data = json.loads(cleaned_content)
-                    
-                    if isinstance(data, list):
-                        print(f"Success: {len(data)}件のレコードを抽出")
-                        if data:
-                            print(f"最初のレコードのフィールド: {list(data[0].keys())}")
-                        return data
-                    else:
-                        print("Error: 応答が配列形式ではありません")
-                        # 単一オブジェクトを配列に変換
-                        if isinstance(data, dict):
-                            print("辞書を配列に変換します")
-                            return [data]
-                        retry_count += 1
-                        time.sleep(2)
-                        
-                except json.JSONDecodeError as e:
-                    print(f"Error: JSON解析エラー: {str(e)}")
-                    print(f"Position: 行 {e.lineno}, 列 {e.colno}")
-                    error_context = cleaned_content[max(0, e.pos-100):min(len(cleaned_content), e.pos+100)]
-                    print(f"Error context:\n{error_context}")
-                    
-                    # より積極的な修正を試みる
-                    try:
-                        # シンプルな手法: JSONテキストを直接修正
-                        simple_obj = '{' + cleaned_content.split('{', 1)[1].split('}', 1)[0] + '}'
-                        print("シンプルな抽出手法を試みます")
-                        data = json.loads(simple_obj)
-                        print("単一オブジェクトとして抽出成功")
-                        return [data]
-                    except:
-                        print("シンプルな抽出にも失敗しました")
-                        retry_count += 1
-                        time.sleep(2)
+                    simple_obj = '{' + cleaned_content.split('{', 1)[1].split('}', 1)[0] + '}'
+                    print("シンプルな抽出手法を試みます")
+                    data = json.loads(simple_obj)
+                    print("単一オブジェクトとして抽出成功")
+                    return [data]
+                except:
+                    print(f"シンプルな抽出にも失敗しました (リトライ {retry_count + 1}/{max_retries})")
+                    retry_count += 1
+                    time.sleep(retry_delay)
                 
-            except Exception as e:
-                print(f"Error: API呼び出しエラー: {type(e).__name__}")
-                print(f"Message: {str(e)}")
-                if hasattr(e, 'response'):
-                    print(f"Response status: {e.response.status_code}")
-                retry_count += 1
-                time.sleep(3)
-        
-        print(f"Warning: {max_retries}回のリトライ後もデータを抽出できませんでした")
-        return []
-        
-    except Exception as e:
-        print(f"Critical Error: データ抽出処理全体で例外が発生: {str(e)}")
-        return []
+        except Exception as e:
+            print(f"Error: API呼び出しエラー: {type(e).__name__}")
+            print(f"Message: {str(e)}")
+            if hasattr(e, 'response'):
+                print(f"Response status: {e.response.status_code}")
+            retry_count += 1
+            time.sleep(retry_delay)
+    
+    print(f"Warning: {max_retries}回のリトライ後もデータを抽出できませんでした")
+    return []
 
 def extract_structured_data(text):
     """テキストから構造化データを抽出する"""
@@ -400,119 +386,105 @@ def extract_structured_data(text):
         setup_azure_openai()
         
         print(f"\nテキスト処理開始 (長さ: {len(text)} 文字)")
-        max_chars_per_request = 2000
         
-        # セッション情報を保持する辞書
-        session_info = {
-            'current_session_name': None,
-            'current_session_code': None,
-            'current_overview': None,
-            'current_organizers': None,
-            'current_chairperson': None
-        }
+        # セッションコードの総数を事前にカウント
+        total_sessions = len(re.findall(r'Session Code\s+[A-Z0-9]+', text))
+        print(f"\n文書全体のセッション数: {total_sessions}")
         
-        if len(text) > max_chars_per_request:
-            chunks = split_text(text, max_chars_per_request)
-            print(f"{len(chunks)}個のチャンクに分割完了")
-            
-            all_results = []
-            seen_sessions = set()
-            
-            for i, chunk in enumerate(chunks, 1):
-                try:
-                    print(f"\nチャンク {i}/{len(chunks)} を処理中")
-                    print(f"チャンクサイズ: {len(chunk)} 文字")
-                    print(f"チャンク内容プレビュー:\n{chunk[:200]}...")
+        # セッション単位で分割
+        chunks = split_text(text)
+        print(f"{len(chunks)}個のチャンクに分割完了")
+        
+        all_results = []
+        seen_sessions = set()
+        
+        for i, chunk in enumerate(chunks, 1):
+            try:
+                print(f"\nチャンク {i}/{len(chunks)} を処理中")
+                print(f"チャンクサイズ: {len(chunk)} 文字")
+                
+                # セッションコードを抽出して表示
+                session_codes = re.findall(r'Session Code\s+([A-Z0-9]+)', chunk)
+                if session_codes:
+                    print(f"このチャンクに含まれるセッションコード: {', '.join(session_codes)}")
+                
+                # プロンプトの生成
+                prompt = f"""
+以下のテキストからセッション情報を抽出してください。各セッションは"Session Code"で区切られています。
+
+抽出ルール:
+1. 各セッションの情報を個別に抽出
+2. セッション名は"Session Code"の直前の行から抽出
+3. セッションコードは"Session Code"の直後のコードを抽出
+4. 論文情報は各セッション内の表形式から抽出
+5. 著者情報は論文タイトルの直後の行から抽出
+
+出力形式:
+[
+    {{
+        "session_name": "セッション名",
+        "session_code": "セッションコード",
+        "paper_no": "論文番号",
+        "title": "論文タイトル",
+        "main_author_group": "主著者グループ",
+        "main_author_affiliation": "主著者の所属",
+        "co_author_group": "共著者グループ",
+        "co_author_affiliation": "共著者の所属",
+        "organizers": "オーガナイザー",
+        "chairperson": "議長"
+    }}
+]
+
+テキスト:
+{chunk}
+"""
+                
+                # API呼び出し
+                response = openai.ChatCompletion.create(
+                    deployment_id=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
+                    messages=[
+                        {"role": "system", "content": "You are a precise data extraction assistant. Extract session and paper information from the text. Return ONLY valid JSON arrays with the exact structure specified."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0,
+                    max_tokens=2000
+                )
+                
+                if response.choices:
+                    content = response.choices[0].message.content.strip()
+                    print(f"APIレスポンス: {content[:200]}...")  # レスポンスの最初の200文字を表示
                     
-                    # セッション名の抽出を改善
-                    session_name_match = re.search(r'(?:^|\n)([^\n]+?)(?=\s*\nSession Code)', chunk)
-                    if session_name_match and not session_name_match.group(1).strip().startswith("Planned by"):
-                        session_info['current_session_name'] = session_name_match.group(1).strip()
-                        print(f"セッション名を更新: {session_info['current_session_name']}")
-                    
-                    # セッションコードの抽出
-                    session_code_match = re.search(r'Session Code\s+([A-Z0-9]+)', chunk)
-                    if session_code_match:
-                        session_info['current_session_code'] = session_code_match.group(1)
-                        print(f"セッションコードを更新: {session_info['current_session_code']}")
-                    
-                    # 概要の抽出を改善
-                    overview_match = re.search(r'Room.*?\n(?:(?!Time\s+Paper No\.).)*?(.*?)(?=(?:Time\s+Paper No\.|Organizers|$))', chunk, re.DOTALL)
-                    if overview_match and overview_match.group(1).strip() and not re.search(r'\d{4}-\d{2}-\d{4}', overview_match.group(1)):
-                        session_info['current_overview'] = overview_match.group(1).strip()
-                        print(f"概要を更新: {session_info['current_overview'][:100]}...")
-                    
-                    # 主催者情報の抽出
-                    organizers_match = re.search(r'Organizers -\s*(.*?)(?=(?:Time\s+Paper No\.|Chairperson|$))', chunk, re.DOTALL)
-                    if organizers_match:
-                        session_info['current_organizers'] = organizers_match.group(1).strip()
-                        print(f"主催者情報を更新: {session_info['current_organizers'][:100]}...")
-                    
-                    # 論文情報の抽出（複数の論文に対応）
-                    papers_section = re.search(r'Time\s+Paper No\.\s+Title\s*(.*?)(?=(?:Planned by|$))', chunk, re.DOTALL)
-                    if papers_section:
-                        papers_text = papers_section.group(1)
-                        paper_matches = re.finditer(
-                            r'(\d{1,2}:\d{2}\s*(?:a\.m\.|p\.m\.))\s*((?:ORAL ONLY|20\d{2}-\d{2}-\d{4}))\s*(.*?)(?=(?:\d{1,2}:\d{2}\s*(?:a\.m\.|p\.m\.)|$))',
-                            papers_text,
-                            re.DOTALL
-                        )
+                    try:
+                        # JSONの整形
+                        content = content.replace('```json', '').replace('```', '').strip()
                         
-                        for paper_match in paper_matches:
-                            time, paper_no, content = paper_match.groups()
+                        # 配列形式の確認
+                        if not content.startswith('['):
+                            print("Warning: レスポンスが配列形式ではありません。配列に変換します。")
+                            content = f"[{content}]"
+                        
+                        data = json.loads(content)
+                        
+                        if isinstance(data, list):
+                            print(f"Success: {len(data)}件のレコードを抽出")
+                            all_results.extend(data)
+                        else:
+                            print("Warning: レスポンスが配列ではありません。単一オブジェクトとして処理します。")
+                            all_results.append(data)
                             
-                            # タイトルと著者を分離
-                            content_parts = content.strip().split('\n', 1)
-                            title = content_parts[0].strip()
-                            authors = content_parts[1].strip() if len(content_parts) > 1 else "No data"
-                            
-                            result = {
-                                'Session_Name': session_info['current_session_name'] or "No data",
-                                'Session_Code': session_info['current_session_code'] or "No data",
-                                'Overview': session_info['current_overview'] or "No data",
-                                'Paper_No': paper_no.strip(),
-                                'Title': title,
-                                'Main_Author_Group': "No data",
-                                'Main_Author_Affiliation': "No data",
-                                'Co_Author_Group': "No data",
-                                'Co_Author_Affiliation': "No data",
-                                'Organizers': session_info['current_organizers'] or "No data",
-                                'Chairperson': session_info['current_chairperson'] or "No data"
-                            }
-                            
-                            # 著者情報の抽出
-                            if authors != "No data":
-                                parts = authors.split(";")
-                                if len(parts) > 0:
-                                    main_authors = parts[0].strip()
-                                    if "," in main_authors:
-                                        main_author_parts = main_authors.rsplit(",", 1)
-                                        result['Main_Author_Group'] = main_author_parts[0].strip() + ","
-                                        result['Main_Author_Affiliation'] = main_author_parts[1].strip()
-                                
-                                if len(parts) > 1:
-                                    co_authors = ";".join(parts[1:]).strip()
-                                    if "," in co_authors:
-                                        co_author_parts = co_authors.rsplit(",", 1)
-                                        result['Co_Author_Group'] = co_author_parts[0].strip() + ","
-                                        result['Co_Author_Affiliation'] = co_author_parts[1].strip()
-                            
-                            session_id = f"{result['Session_Code']}_{result['Paper_No']}"
-                            if session_id not in seen_sessions and session_id != "_":
-                                seen_sessions.add(session_id)
-                                all_results.append(result)
-                                print(f"新しいセッションを追加: {session_id}")
-                    
-                    print(f"Progress: 現在までに {len(all_results)} 件のユニークなレコードを抽出")
-                    
-                except Exception as chunk_error:
-                    print(f"Error: チャンク {i} の処理中にエラーが発生: {str(chunk_error)}")
-                    continue
-            
-            print(f"\n処理完了: 合計 {len(all_results)} 件のユニークなレコードを抽出")
-            return all_results
-        else:
-            return extract_single_paper(text)
+                    except json.JSONDecodeError as e:
+                        print(f"Error: JSON解析エラー: {str(e)}")
+                        print(f"Position: 行 {e.lineno}, 列 {e.colno}")
+                        print(f"問題のある部分: {content[max(0, e.pos-50):min(len(content), e.pos+50)]}")
+                        continue
+                
+            except Exception as chunk_error:
+                print(f"Error: チャンク {i} の処理中にエラーが発生: {str(chunk_error)}")
+                continue
+        
+        print(f"\n処理完了: 合計 {len(all_results)} 件のレコードを抽出")
+        print(f"抽出されたユニークなセッション数: {len({r['session_code'] for r in all_results})}")
+        return all_results
             
     except Exception as e:
         print(f"Error: データ抽出処理全体でエラーが発生: {str(e)}")

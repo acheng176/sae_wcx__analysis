@@ -12,7 +12,11 @@ def extract_text_from_pdf(pdf_path):
             print(f"PDF has {len(reader.pages)} pages")
             for page_num in range(len(reader.pages)):
                 page_text = reader.pages[page_num].extract_text()
-                text += page_text + "\n"
+                # セッションの区切りを保持
+                page_text = page_text.replace("Session Code", "\nSession Code")
+                page_text = page_text.replace("Room", "\nRoom")
+                page_text = page_text.replace("Organizers", "\nOrganizers")
+                text += page_text + "\n\n"  # ページ間の区切りを追加
                 if page_num == 0:  # 最初のページのサンプルテキストを表示
                     print(f"Sample text from first page (first 200 chars): {page_text[:200]}")
         print(f"Successfully extracted {len(text)} characters from PDF")

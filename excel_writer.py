@@ -49,76 +49,49 @@ def extract_year_from_text(text):
     # 見つからない場合は現在の年を使用
     return str(datetime.now().year)
 
-def write_to_excel(data, output_file, input_text=""):
-    """抽出データをExcelに書き込む（シート名を年に設定）"""
-    print(f"\nPreparing to write data to Excel: {output_file}")
-    
-    # 年を抽出
-    year = extract_year_from_text(input_text)
-    print(f"Extracted year: {year}")
-    
-    # 出力ファイル名を年を含む形式に変更
-    file_dir = os.path.dirname(output_file)
-    file_name = os.path.basename(output_file)
-    
-    # ファイル名パターンを変更: base_filename_YYYYMMDD.xlsx -> YYYY_base_filename.xlsx
-    base_name = config.base_filename
-    new_file_name = f"{year}_{base_name}.xlsx"
-    output_file = os.path.join(file_dir, new_file_name)
-    
-    print(f"Updated output file name: {output_file}")
-    
-    # 出力フォルダが存在しない場合は作成
-    output_dir = os.path.dirname(output_file)
-    if not os.path.exists(output_dir):
-        print(f"Creating output directory: {output_dir}")
-        os.makedirs(output_dir, exist_ok=True)
-    
-    # データのクリーニング
-    clean_data = []
-    for item in data:
-        clean_item = {}
-        for key, value in item.items():
-            if key in ['Authors', 'Affiliations']:
-                # 配列や文字列の整形
-                clean_item[key] = clean_string_array(value)
-            else:
-                clean_item[key] = value
-        clean_data.append(clean_item)
-    
-    # DataFrameに変換
-    df = pd.DataFrame(clean_data)
-    
-    # Noカラムを追加（1からの連番）
-    df.insert(0, 'No', range(1, len(df) + 1))
-    
-    print(f"Created DataFrame with {len(df)} rows and {len(df.columns)} columns")
-    print(f"DataFrame columns: {df.columns.tolist()}")
-    
-    # 列の順序を指定（Noを先頭に追加）
-    columns = ['No'] + config.COLUMNS + ["Source File"]
-    
-    # 指定の列が存在する場合のみ選択
-    available_columns = [col for col in columns if col in df.columns]
-    print(f"Available columns: {available_columns}")
-    df = df[available_columns]
-    
-    # サンプルデータを表示
-    if not df.empty:
-        print("\nSample data (first 2 rows):")
-        print(df.head(2).to_string())
-    
-    # ExcelWriterの作成
-    with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-        # シート名を年に設定して書き込み
-        df.to_excel(writer, sheet_name=year, index=False)
-    
-    # ファイル存在確認
-    if os.path.exists(output_file):
-        file_size = os.path.getsize(output_file) / 1024  # KBに変換
-        print(f"Excel file created successfully: {output_file} (Size: {file_size:.2f} KB)")
-        print(f"Data written to sheet named '{year}'")
-    else:
-        print(f"ERROR: Failed to create Excel file at {output_file}")
-    
-    return output_file
+def write_to_excel(data, output_file, source_text):
+    """データをエクセルファイルに書き込む"""
+    try:
+        # データフレームの作成
+        df = pd.DataFrame(data)
+        
+        # カラムの順序を定義
+        columns = [
+            'no',
+            'session_name',
+            'session_code',
+            'paper_no',
+            'title',
+            'main_author_group',
+            'main_author_affiliation',
+            'co_author_group',
+            'co_author_affiliation',
+            'organizers',
+            'chairperson',
+            'sourcefile'
+        ]
+        
+        # 必要なカラムが存在しない場合は追加
+        for col in columns:
+            if col not in df.columns:
+                df[col] = ''
+        
+        # カラムの順序を設定
+        df = df[columns]
+        
+        # データの整形
+        df['no'] = range(1, len(df) + 1)
+        df['sourcefile'] = os.path.basename(source_text)
+        
+        # エクセルファイルに書き込み
+        df.to_excel(output_file, index=False, engine='openpyxl')
+        
+        print(f"\nエクセルファイルに書き込み完了: {output_file}")
+        print(f"書き込まれたレコード数: {len(df)}")
+        print(f"カラム一覧: {', '.join(df.columns)}")
+        
+        return output_file
+        
+    except Exception as e:
+        print(f"Error: エクセルファイルへの書き込み中にエラー: {str(e)}")
+        return None
