@@ -11,27 +11,26 @@ def validate_session_name(session_name, session_code, chunk):
     """セッション名の妥当性を検証"""
     # 空のセッション名をチェック
     if not session_name.strip():
-        print(f"Warning: 空のセッション名 (Session Code: {session_code})")
         return False
     
     # セッション名が異常に長いケースをチェック
-    if len(session_name) > 200:  # 適切な最大長を設定
-        print(f"Warning: セッション名が異常に長い: {session_name[:50]}...")
+    if len(session_name) > 200:
         return False
     
-    # セッション名に不適切な文字列が含まれていないかチェック
+    # 不適切なパターンをより詳細にチェック
     invalid_patterns = [
-        'Paper No',
-        'Time',
-        'Title',
-        'Room',
-        'Organizers',
-        'Chairperson'
+        r'Room\s+',
+        r'Paper No\.',
+        r'Time\s+',
+        r'Title\s+',
+        r'Organizers\s*-',
+        r'Chairperson\s*:',
+        r'\d{1,2}:\d{2}\s*(?:a\.m\.|p\.m\.)',  # 時刻のパターン
+        r'Session\s+Code',
     ]
     
     for pattern in invalid_patterns:
-        if pattern in session_name:
-            print(f"Warning: セッション名に不適切な文字列が含まれている: {session_name}")
+        if re.search(pattern, session_name, re.IGNORECASE):
             return False
     
     return True
@@ -39,38 +38,57 @@ def validate_session_name(session_name, session_code, chunk):
 def split_text(text):
     """テキストをセッション単位で分割する"""
     # セッションの区切りパターン
-    # Session Codeとその直前の行を含めて検出
-    session_pattern = r'([^\n]*)\n\s*Session Code\s+([A-Z0-9]+)'
+    session_pattern = r'(?:^|\n\n)([^\n]+)\n\s*Session Code\s+([A-Z0-9]+)'
     sessions = re.finditer(session_pattern, text, re.MULTILINE)
     
     chunks = []
-    current_position = 0
+    session_starts = []  # セッション開始位置を保存
     
+    # まずセッションの開始位置をすべて取得
     for match in sessions:
-        session_name = match.group(1).strip()
-        session_code = match.group(2)
-        start = match.start()
-        
+        session_starts.append((match.start(), match.group(1).strip(), match.group(2)))
+    
+    # 各セッションの範囲を決定
+    for i, (start, session_name, session_code) in enumerate(session_starts):
         # セッション名の妥当性をチェック
         if not validate_session_name(session_name, session_code, text[start:]):
             print(f"Warning: セッション名の検証に失敗しました: {session_name}")
-            # 問題のあるセッション名の場合、直前の有効な行を探す
+            # より厳密な代替セッション名の検索
             lines_before = text[:start].split('\n')
-            for line in reversed(lines_before):
-                if line.strip() and validate_session_name(line.strip(), session_code, text[start:]):
-                    session_name = line.strip()
-                    print(f"Info: 代替のセッション名を使用: {session_name}")
-                    break
+            valid_lines = [
+                line.strip() for line in reversed(lines_before[-5:])
+                if line.strip() and validate_session_name(line.strip(), session_code, text[start:])
+                and not re.match(r'.*\d{1,2}:\d{2}\s*(?:a\.m\.|p\.m\.)', line)
+            ]
+            
+            if valid_lines:
+                session_name = valid_lines[0]
+                print(f"Info: 代替のセッション名を使用: {session_name}")
+        else:
+                print(f"Error: 有効なセッション名が見つかりませんでした: {session_code}")
+                continue
         
-        # 次のSession Codeまでの内容を取得
-        next_match = re.search(r'\nSession Code\s+[A-Z0-9]+', text[match.end():])
-        end = match.end() + next_match.start() if next_match else len(text)
-        
-        # セッションの内容を抽出（Session Code行から開始）
-        session_content = text[match.start(2):end].strip()
+        # セッションの終了位置を決定
+        if i < len(session_starts) - 1:
+            # 次のセッションの直前まで
+            next_session_start = session_starts[i + 1][0]
+            # セッションの内容を抽出（ページ区切りを無視）
+            session_content = text[start:next_session_start].strip()
+            
+            # ページヘッダーを削除
+            session_content = re.sub(r'\n\s*WCX SAE World Congress Experience\s*\n[^\n]*\n[^\n]*\n', '\n', session_content)
+            session_content = re.sub(r'\n\s*Technical Session Schedule\s*\n', '\n', session_content)
+            session_content = re.sub(r'\n\s*(?:Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Monday),\s+[A-Za-z]+\s+\d+\s*\n', '\n', session_content)
+        else:
+            # 最後のセッションは文書の最後まで
+            session_content = text[start:].strip()
+            # 最後のセッションでもページヘッダーを削除
+            session_content = re.sub(r'\n\s*WCX SAE World Congress Experience\s*\n[^\n]*\n[^\n]*\n', '\n', session_content)
+            session_content = re.sub(r'\n\s*Technical Session Schedule\s*\n', '\n', session_content)
+            session_content = re.sub(r'\n\s*(?:Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Monday),\s+[A-Za-z]+\s+\d+\s*\n', '\n', session_content)
         
         # チャンクを構築
-        chunk = f"{session_name}\nSession Code {session_code}\n{session_content}"
+        chunk = f"{session_name}\n{session_content}"
         chunks.append(chunk)
         
         # デバッグ情報
@@ -79,16 +97,11 @@ def split_text(text):
         print(f"Session Name: {session_name}")
         print(f"チャンクサイズ: {len(chunk)} 文字")
         
-        # 論文番号を表示
-        papers = re.findall(r'Paper No\.\s+([A-Z0-9-]+|ORAL ONLY)', chunk)
-        if papers:
-            print(f"含まれる論文番号: {', '.join(papers)}")
-        
         # セッションの境界を表示
         content_preview = session_content[:100] + "..." if len(session_content) > 100 else session_content
         print(f"セッション内容プレビュー:\n{content_preview}")
     
-    print(f"\n合計 {len(chunks)} セッションを検出")
+    print(f"\n合計 {len(chunks)} 個のセッションを検出しました")
     return chunks
 
 def setup_azure_openai():
@@ -104,8 +117,8 @@ def chunk_text(text, max_chunk_size=6000):
     if not text:
         return []
     
+    chunks = []
     try:
-        chunks = []
         # セッションの区切りとなるマーカー
         session_markers = ["Room ", "Session Code", "Part 1 of", "Part 2 of", "Part 3 of"]
         
@@ -124,8 +137,8 @@ def chunk_text(text, max_chunk_size=6000):
                         best_pos = pos
                 except Exception as e:
                     print(f"Warning: マーカー '{marker}' の検索中にエラー: {e}")
-                    continue
-            
+                continue
+                
             if best_pos > 0:
                 chunk_end = best_pos
             
@@ -141,11 +154,10 @@ def chunk_text(text, max_chunk_size=6000):
             print(f"Progress: チャンク {len(chunks)} 作成完了 ({chunk_end}/{len(text)} 文字処理済み)")
         
         return chunks
-        
     except Exception as e:
         print(f"Error: テキスト分割中にエラー発生: {e}")
         return [text]  # エラー時は元のテキストを1つのチャンクとして返す
-    
+
 def clean_json_response(content):
     """APIレスポンスのJSONをクリーンアップする（より強化版）"""
     try:
@@ -263,64 +275,55 @@ def fix_json_errors(content):
         print(f"JSONエラー修正中に例外が発生: {e}")
         return content
 
-def get_extraction_prompt(chunk_text):
-    """データ抽出用のプロンプトを生成する"""
+def get_extraction_prompt(text):
+    """データ抽出用のプロンプトを生成"""
     return f"""
-Extract session information from the following text. Each session starts with "Session Code" and ends before the next "Session Code".
+以下のテキストからセッション情報を抽出してください。テキストは複数のセッションを含む可能性があります。
 
-Extraction Rules:
-1. Session Name (session_name):
-   - Extract ONLY the line that appears IMMEDIATELY ABOVE the "Session Code" line
-   - The line should be a valid session title (not contain "Paper No", "Time", "Title", etc.)
-   - Example: "Fatigue Analysis and Design - Part 1 of 3"
+抽出ルール:
+1. セッション名（session_name）は「Session Code」の前の行から抽出
+2. 概要（overview）は「Room」の行の後から、「Moderators」「Organizers」「Panelists」などの行の前までの段落を抽出
+3. セッションコード（session_code）は「Session Code」の直後の行から抽出
+4. 論文情報は表形式で抽出し、以下のフィールドを含める:
+   - paper_no: 論文番号
+   - title: 論文タイトル
+   - main_author_group: 筆頭著者の所属グループ
+   - main_author_affiliation: 筆頭著者の所属機関
+   - co_author_group: 共著者の所属グループ
+   - co_author_affiliation: 共著者の所属機関
+5. オーガナイザー（organizers）は「Organizers」の行の後から抽出
+6. 議長（chairperson）は「Chairperson」の行の後から抽出
 
-2. Session Overview (overview):
-   - Extract the paragraph that appears after the "Room" line and before lines like "Moderators", "Organizers", or "Panelists"
-   - If no such paragraph exists, use "no data"
-   - Example: "1 customer usage development 2 structural stress generation..."
+テキスト:
+{text}
 
-3. Session Code (session_code):
-   - Extract the code that appears immediately after "Session Code"
-   - Example: "SS111"
-
-4. Paper Information:
-   - Paper Number (paper_no): Extract from the "Paper No." column in table format (including "ORAL ONLY")
-   - Title (title): Extract from the "Title" column in table format
-   - IMPORTANT: Only extract papers that appear in the current session's content
-
-5. Author Information:
-   - Main Author Group (main_author_group): Extract author names from the line after the paper title until the first semicolon
-   - Main Author Affiliation (main_author_affiliation): Extract the institution name from the line after main authors, ending with a semicolon
-   - Co-Author Group (co_author_group): Extract author names from the line after main author affiliation until the next semicolon
-   - Co-Author Affiliation (co_author_affiliation): Extract the institution name from the line after co-authors, ending with a semicolon
-
-6. Session Organization:
-   - Organizers (organizers): Extract the complete text after "Organizers -"
-   - Chairperson (chairperson): Extract the complete text after "Chairperson:"
-
-Output Format:
+出力形式:
 [
     {{
-        "session_name": "Session Name",
-        "session_code": "Session Code",
-        "overview": "Session Overview",
-        "paper_no": "Paper Number",
-        "title": "Paper Title",
-        "main_author_group": "Main Author Group",
-        "main_author_affiliation": "Main Author Affiliation",
-        "co_author_group": "Co-Author Group",
-        "co_author_affiliation": "Co-Author Affiliation",
-        "organizers": "Organizers",
-        "chairperson": "Chairperson"
+        "session_name": "セッション名",
+        "session_code": "セッションコード",
+        "overview": "セッション概要",
+        "paper_no": "論文番号",
+        "title": "論文タイトル",
+        "main_author_group": "筆頭著者の所属グループ",
+        "main_author_affiliation": "筆頭著者の所属機関",
+        "co_author_group": "共著者の所属グループ",
+        "co_author_affiliation": "共著者の所属機関",
+        "organizers": "オーガナイザー",
+        "chairperson": "議長"
     }}
 ]
 
-Text to extract from:
-{chunk_text}
+注意事項:
+1. 必ずJSON形式で出力してください
+2. 各セッションの情報を完全に抽出してください
+3. 情報が見つからない場合は空文字列（""）を使用してください
+4. 複数のセッションがある場合は、それぞれを別のオブジェクトとして出力してください
+5. 表形式のデータは正確に抽出してください
 """
 
 def extract_structured_data(text):
-    """テキストから構造化データを抽出する"""
+    """テキストから構造化データを抽出"""
     try:
         setup_azure_openai()
         
@@ -360,7 +363,7 @@ def extract_structured_data(text):
                     temperature=0,
                     max_tokens=2000
                 )
-                
+
                 if response.choices:
                     content = response.choices[0].message.content.strip()
                     print(f"APIレスポンス: {content[:200]}...")  # レスポンスの最初の200文字を表示
@@ -403,14 +406,23 @@ def extract_structured_data(text):
 
 def extract_year_from_text(text):
     """テキストから年を抽出する"""
-    # テキストの最初の4桁の数字を年として抽出
-    year_pattern = r'^.*?(\d{4})'  # テキストの先頭から最初に出現する4桁の数字
-    year_match = re.search(year_pattern, text)
-    if year_match:
-        year = year_match.group(1)
-        if year.startswith('20'):  # 2000年代の年のみ有効とする
-            return year
-    return None
+    try:
+        # まず、"As of" の後の年を探す
+        as_of_pattern = r'As of\s+[A-Za-z]+\s+\d+,\s+(\d{4})'
+        as_of_match = re.search(as_of_pattern, text)
+        if as_of_match:
+            return as_of_match.group(1)
+        
+        # 次に、ファイル内の最初の4桁の数字を探す
+        year_pattern = r'\b(20\d{2})\b'
+        year_match = re.search(year_pattern, text)
+        if year_match:
+            return year_match.group(1)
+        
+        return None
+    except Exception as e:
+        print(f"Warning: 年の抽出中にエラー: {e}")
+        return None
 
 def save_to_json(data, output_file=None):
     """データをJSONファイルとして保存する"""
@@ -420,11 +432,10 @@ def save_to_json(data, output_file=None):
             input_text = f.read()
             year = extract_year_from_text(input_text)
         
+        # 出力ファイル名の生成
         if year:
-            # 年を含むファイル名を生成
             output_file = f"{year}_wcx_sessions.json"
         else:
-            # 年が取得できない場合は現在の日付を使用
             current_date = datetime.now().strftime("%Y%m%d")
             output_file = f"wcx_sessions_{current_date}.json"
         
@@ -444,11 +455,10 @@ def save_to_json(data, output_file=None):
         print(f"Error: ファイル保存中にエラー: {e}")
         return None
 
-# メイン実行部分を更新
-if __name__ == "__main__":
+def main():
     try:
         # テキストファイルから入力を読み込む
-        input_file = "input.txt"  # 入力ファイル名を適宜変更
+        input_file = "input.txt"
         with open(input_file, 'r', encoding='utf-8') as f:
             input_text = f.read()
         
@@ -463,17 +473,30 @@ if __name__ == "__main__":
         results = extract_structured_data(input_text)
         
         if results:
+            # カテゴリー分類の実行
+            from categorizer import add_categories_to_data
+            results = add_categories_to_data(results)
+            
             # 結果をJSONに保存
             output_path = save_to_json(results)
             
             # 結果をExcelに保存
             try:
                 from excel_writer import write_to_excel
-                excel_output = os.path.join("output", f"{year}_wcx_sessions.xlsx" if year else "wcx_sessions.xlsx")
-                excel_file = write_to_excel(results, excel_output)
+                excel_output = os.path.join("output", f"{year}_wcx_sessions.xlsx")
+                excel_file, df = write_to_excel(results, excel_output)
                 print(f"Excelファイルを保存しました: {excel_file}")
+                
+                # SQLiteデータベースに保存
+                from db_handler import DatabaseHandler
+                db = DatabaseHandler()
+                if db.store_data(df, year):
+                    # カテゴリー分布のグラフを作成
+                    graph_file = db.create_visualization(year)
+                    if graph_file:
+                        print(f"カテゴリー分布グラフを作成しました: {graph_file}")
             except Exception as e:
-                print(f"Excel出力中にエラー: {e}")
+                print(f"出力処理中にエラー: {e}")
             
             if output_path:
                 print(f"処理が完了しました。JSONファイル: {output_path}")
@@ -484,3 +507,6 @@ if __name__ == "__main__":
             
     except Exception as e:
         print(f"Error: プログラム実行中にエラー: {e}")
+
+if __name__ == "__main__":
+    main()
