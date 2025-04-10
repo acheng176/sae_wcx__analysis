@@ -135,6 +135,18 @@ class DatabaseHandler:
             print(f"Error: グラフ作成中にエラー: {e}")
             return None 
 
+    def delete_all_data(self):
+        """データベースの全データを削除する"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM sessions")
+                conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error: データの削除中にエラーが発生: {str(e)}")
+            return False
+
 def validate_db_input(data, year):
     """データベース入力の妥当性を検証する
     
