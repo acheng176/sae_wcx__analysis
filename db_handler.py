@@ -25,7 +25,6 @@ class DatabaseHandler:
             CREATE TABLE IF NOT EXISTS sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 year INTEGER,
-                no INTEGER,
                 session_name TEXT,
                 session_code TEXT,
                 overview TEXT,
@@ -46,80 +45,52 @@ class DatabaseHandler:
             conn.commit()
 
     def store_data(self, data, year):
-        """抽出したデータをSQLiteデータベースに保存する"""
+        """データをSQLiteデータベースに保存する"""
         try:
-            # データベースの接続
+            # データの検証
+            if not validate_db_input(data, year):
+                print("Error: データの検証に失敗しました")
+                return False
+            
+            # データベース接続
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # テーブルの作成
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS sessions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                year INTEGER,
-                session_name TEXT,
-                session_code TEXT,
-                overview TEXT,
-                paper_no TEXT,
-                title TEXT,
-                main_author_group TEXT,
-                main_author_affiliation TEXT,
-                co_author_group TEXT,
-                co_author_affiliation TEXT,
-                organizers TEXT,
-                chairperson TEXT,
-                category TEXT,
-                subcategory TEXT
-            )
-            ''')
-            
             # データの挿入
             for item in data:
-                for paper in item.get('papers', []):
-                    # 著者情報の処理
-                    authors = paper.get('authors', [])
-                    main_author = authors[0] if authors else {}
-                    co_authors = authors[1:] if len(authors) > 1 else []
-                    
-                    cursor.execute('''
+                cursor.execute('''
                     INSERT INTO sessions (
-                        year, session_name, session_code, overview, paper_no, title,
+                        year, session_name, session_code, overview,
+                        category, subcategory, paper_no, title,
                         main_author_group, main_author_affiliation,
                         co_author_group, co_author_affiliation,
-                        organizers, chairperson,
-                        category, subcategory
+                        organizers, chairperson
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        year,
-                        item.get('session_name', ''),
-                        item.get('session_code', ''),
-                        item.get('overview', ''),
-                        paper.get('paper_no', ''),
-                        paper.get('title', ''),
-                        main_author.get('group', ''),
-                        main_author.get('affiliation', ''),
-                        '; '.join(a.get('group', '') for a in co_authors),
-                        '; '.join(a.get('affiliation', '') for a in co_authors),
-                        '; '.join(item.get('organizers', [])),
-                        item.get('chairperson', ''),
-                        item.get('category', ''),
-                        item.get('subcategory', '')
-                    ))
+                ''', (
+                    year,
+                    item.get('session_name', ''),
+                    item.get('session_code', ''),
+                    item.get('overview', ''),
+                    item.get('category', ''),
+                    item.get('subcategory', ''),
+                    item.get('paper_no', ''),
+                    item.get('title', ''),
+                    item.get('main_author_group', ''),
+                    item.get('main_author_affiliation', ''),
+                    item.get('co_author_group', ''),
+                    item.get('co_author_affiliation', ''),
+                    item.get('organizers', ''),
+                    item.get('chairperson', '')
+                ))
             
-            # 変更の保存
             conn.commit()
-            print(f"データをデータベースに保存しました: {self.db_path}")
+            conn.close()
+            print(f"データベースへの保存が完了しました（{len(data)}件）")
+            return True
             
         except Exception as e:
-            print(f"データベースへの保存中にエラーが発生しました: {str(e)}")
+            print(f"Error: データベースへの保存中にエラーが発生: {str(e)}")
             return False
-        
-        finally:
-            # データベースの接続を閉じる
-            if 'conn' in locals():
-                conn.close()
-            
-        return True
 
     def get_category_summary(self, year=None):
         """カテゴリー別の集計を取得"""

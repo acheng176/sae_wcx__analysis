@@ -67,6 +67,8 @@ def write_to_excel(data, year, output_dir="output"):
                     'session_name': item.get('session_name', ''),
                     'session_code': item.get('session_code', ''),
                     'overview': item.get('overview', ''),
+                    'category': item.get('category', ''),
+                    'subcategory': item.get('subcategory', ''),
                     'paper_no': paper.get('paper_no', ''),
                     'title': paper.get('title', ''),
                     'main_author_group': main_author.get('group', ''),
@@ -74,38 +76,110 @@ def write_to_excel(data, year, output_dir="output"):
                     'co_author_group': '; '.join(a.get('group', '') for a in co_authors),
                     'co_author_affiliation': '; '.join(a.get('affiliation', '') for a in co_authors),
                     'organizers': '; '.join(item.get('organizers', [])),
-                    'chairperson': item.get('chairperson', ''),
-                    'category': item.get('category', ''),
-                    'subcategory': item.get('subcategory', '')
+                    'chairperson': item.get('chairperson', '')
                 }
                 rows.append(row)
         
         # DataFrameの作成
         df = pd.DataFrame(rows)
         
+        # カテゴリーとサブカテゴリーの日本語マッピング
+        category_mapping = {
+            "Vehicle Dynamics": "車両ダイナミクス",
+            "Powertrain": "パワートレイン",
+            "Safety": "安全性",
+            "Materials": "材料",
+            "Manufacturing": "製造",
+            "Electrification": "電動化",
+            "Autonomous": "自動運転",
+            "Connectivity": "コネクティビティ",
+            "Simulation": "シミュレーション",
+            "Testing": "テスト",
+            "Regulation": "規制",
+            "Business": "ビジネス",
+            "Others": "その他"
+        }
+        
+        subcategory_mapping = {
+            "Suspension": "サスペンション",
+            "Braking": "ブレーキ",
+            "Steering": "ステアリング",
+            "Tire": "タイヤ",
+            "Engine": "エンジン",
+            "Transmission": "トランスミッション",
+            "Hybrid": "ハイブリッド",
+            "Battery": "バッテリー",
+            "Crash": "衝突",
+            "Pedestrian": "歩行者",
+            "Active Safety": "アクティブセーフティ",
+            "Passive Safety": "パッシブセーフティ",
+            "Steel": "鋼材",
+            "Aluminum": "アルミニウム",
+            "Composites": "複合材料",
+            "Plastics": "プラスチック",
+            "Assembly": "組立",
+            "Welding": "溶接",
+            "Machining": "加工",
+            "Quality": "品質",
+            "Battery Management": "バッテリー管理",
+            "Motor Control": "モーター制御",
+            "Charging": "充電",
+            "Perception": "認識",
+            "Planning": "計画",
+            "Control": "制御",
+            "V2X": "V2X",
+            "Infotainment": "インフォテインメント",
+            "Telematics": "テレマティクス",
+            "CAE": "CAE",
+            "CFD": "CFD",
+            "FEA": "FEA",
+            "Durability": "耐久性",
+            "NVH": "NVH",
+            "Emissions": "排出",
+            "Fuel Economy": "燃費",
+            "Market": "市場",
+            "Strategy": "戦略",
+            "Others": "その他"
+        }
+        
+        # カテゴリーとサブカテゴリーを日本語に変換
+        df['category'] = df['category'].map(category_mapping).fillna('その他')
+        df['subcategory'] = df['subcategory'].map(subcategory_mapping).fillna('その他')
+        
         # 列の順序を指定
         columns = [
-            'session_name',
-            'session_code',
-            'overview',
-            'paper_no',
-            'title',
-            'main_author_group',
-            'main_author_affiliation',
-            'co_author_group',
-            'co_author_affiliation',
-            'organizers',
-            'chairperson',
-            'category',
-            'subcategory'
+            'session_name', 'session_code', 'overview',
+            'category', 'subcategory', 'paper_no', 'title',
+            'main_author_group', 'main_author_affiliation',
+            'co_author_group', 'co_author_affiliation',
+            'organizers', 'chairperson'
         ]
         
+        # カラム名を日本語に変換
+        column_names = {
+            'session_name': 'セッション名',
+            'session_code': 'セッションコード',
+            'overview': '概要',
+            'category': 'カテゴリー',
+            'subcategory': 'サブカテゴリー',
+            'paper_no': '論文番号',
+            'title': 'タイトル',
+            'main_author_group': '筆頭著者グループ',
+            'main_author_affiliation': '筆頭著者所属',
+            'co_author_group': '共著者グループ',
+            'co_author_affiliation': '共著者所属',
+            'organizers': 'オーガナイザー',
+            'chairperson': '議長'
+        }
+        
         # 指定した列の順序でDataFrameを並び替え
-        df = df[columns]
+        df = df[columns].rename(columns=column_names)
         
         # Excelファイルに書き込み
         df.to_excel(output_file, index=False)
         print(f"Excelファイルを出力しました: {output_file}")
+        return output_file
         
     except Exception as e:
         print(f"Excelファイルの書き込み中にエラーが発生しました: {str(e)}")
+        return None

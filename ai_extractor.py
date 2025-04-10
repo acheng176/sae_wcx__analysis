@@ -353,7 +353,7 @@ def extract_structured_data(text):
                 # プロンプトの生成
                 prompt = get_extraction_prompt(chunk)
                 
-                # API呼び出し
+                # API呼び出し（バージョン0.28の書き方）
                 response = openai.ChatCompletion.create(
                     deployment_id=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
                     messages=[
