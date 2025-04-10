@@ -45,96 +45,81 @@ class DatabaseHandler:
             
             conn.commit()
 
-    def store_data(self, df, year):
-        """データをSQLiteデータベースに保存する"""
+    def store_data(self, data, year):
+        """抽出したデータをSQLiteデータベースに保存する"""
         try:
-            # データベース接続
+            # データベースの接続
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # テーブルが存在しない場合は作成
+            # テーブルの作成
             cursor.execute('''
-                CREATE TABLE IF NOT EXISTS sessions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    year INTEGER,
-                    session_name TEXT,
-                    session_code TEXT,
-                    overview TEXT,
-                    paper_no TEXT,
-                    title TEXT,
-                    main_author_group TEXT,
-                    main_author_affiliation TEXT,
-                    co_author_group TEXT,
-                    co_author_affiliation TEXT,
-                    organizers TEXT,
-                    chairperson TEXT,
-                    category TEXT,
-                    subcategory TEXT
-                )
+            CREATE TABLE IF NOT EXISTS sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                year INTEGER,
+                session_name TEXT,
+                session_code TEXT,
+                overview TEXT,
+                paper_no TEXT,
+                title TEXT,
+                main_author_group TEXT,
+                main_author_affiliation TEXT,
+                co_author_group TEXT,
+                co_author_affiliation TEXT,
+                organizers TEXT,
+                chairperson TEXT,
+                category TEXT,
+                subcategory TEXT
+            )
             ''')
             
             # データの挿入
-            records = df.to_dict('records')
-            total_records = len(records)
-            inserted_records = 0
-            
-            for record in records:
-                try:
+            for item in data:
+                for paper in item.get('papers', []):
+                    # 著者情報の処理
+                    authors = paper.get('authors', [])
+                    main_author = authors[0] if authors else {}
+                    co_authors = authors[1:] if len(authors) > 1 else []
+                    
                     cursor.execute('''
-                        INSERT INTO sessions (
-                            year, session_name, session_code, overview,
-                            paper_no, title, main_author_group, main_author_affiliation,
-                            co_author_group, co_author_affiliation, organizers,
-                            chairperson, category, subcategory
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO sessions (
+                        year, session_name, session_code, overview, paper_no, title,
+                        main_author_group, main_author_affiliation,
+                        co_author_group, co_author_affiliation,
+                        organizers, chairperson,
+                        category, subcategory
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         year,
-                        record.get('session_name', ''),
-                        record.get('session_code', ''),
-                        record.get('overview', ''),
-                        record.get('paper_no', ''),
-                        record.get('title', ''),
-                        record.get('main_author_group', ''),
-                        record.get('main_author_affiliation', ''),
-                        record.get('co_author_group', ''),
-                        record.get('co_author_affiliation', ''),
-                        record.get('organizers', ''),
-                        record.get('chairperson', ''),
-                        record.get('category', ''),
-                        record.get('subcategory', '')
+                        item.get('session_name', ''),
+                        item.get('session_code', ''),
+                        item.get('overview', ''),
+                        paper.get('paper_no', ''),
+                        paper.get('title', ''),
+                        main_author.get('group', ''),
+                        main_author.get('affiliation', ''),
+                        '; '.join(a.get('group', '') for a in co_authors),
+                        '; '.join(a.get('affiliation', '') for a in co_authors),
+                        '; '.join(item.get('organizers', [])),
+                        item.get('chairperson', ''),
+                        item.get('category', ''),
+                        item.get('subcategory', '')
                     ))
-                    inserted_records += 1
-                except Exception as e:
-                    print(f"Warning: レコードの挿入中にエラー: {e}")
-                    print(f"問題のあるレコード: {record}")
-                    continue
             
-            # 変更をコミット
+            # 変更の保存
             conn.commit()
+            print(f"データをデータベースに保存しました: {self.db_path}")
             
-            # 格納状況の表示
-            print(f"\nデータベース格納状況:")
-            print(f"総レコード数: {total_records}")
-            print(f"正常に格納されたレコード数: {inserted_records}")
-            print(f"格納失敗レコード数: {total_records - inserted_records}")
-            
-            # テーブルの現在の総レコード数を表示
-            cursor.execute("SELECT COUNT(*) FROM sessions")
-            total_in_db = cursor.fetchone()[0]
-            print(f"データベース内の総レコード数: {total_in_db}")
-            
-            # 今年のレコード数を表示
-            cursor.execute("SELECT COUNT(*) FROM sessions WHERE year = ?", (year,))
-            year_records = cursor.fetchone()[0]
-            print(f"{year}年のレコード数: {year_records}")
-            
-            # 接続を閉じる
-            conn.close()
-            
-            return True
         except Exception as e:
-            print(f"Error: データベース保存中にエラー: {e}")
+            print(f"データベースへの保存中にエラーが発生しました: {str(e)}")
             return False
+        
+        finally:
+            # データベースの接続を閉じる
+            if 'conn' in locals():
+                conn.close()
+            
+        return True
 
     def get_category_summary(self, year=None):
         """カテゴリー別の集計を取得"""

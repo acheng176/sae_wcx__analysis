@@ -45,50 +45,67 @@ def extract_year_from_text(text):
         print(f"Warning: 年の抽出中にエラー: {e}")
         return str(datetime.now().year)
 
-def write_to_excel(data, output_file, text_content=None):
-    """データをExcelファイルに書き込む"""
+def write_to_excel(data, year, output_dir="output"):
+    """抽出したデータをExcelファイルに書き込む"""
     try:
         # 出力ディレクトリの作成
-        output_dir = os.path.join("output", "file")
         os.makedirs(output_dir, exist_ok=True)
         
-        # 出力ファイルのパスを設定
-        output_path = os.path.join(output_dir, output_file)
+        # 出力ファイル名の生成（年を文字列に変換）
+        output_file = os.path.join(output_dir, f"sae_wcx_{str(year)}.xlsx")
         
-        # データフレームの作成
-        df = pd.DataFrame(data)
+        # データの整形
+        rows = []
+        for item in data:
+            for paper in item.get('papers', []):
+                # 著者情報の処理
+                authors = paper.get('authors', [])
+                main_author = authors[0] if authors else {}
+                co_authors = authors[1:] if len(authors) > 1 else []
+                
+                row = {
+                    'session_name': item.get('session_name', ''),
+                    'session_code': item.get('session_code', ''),
+                    'overview': item.get('overview', ''),
+                    'paper_no': paper.get('paper_no', ''),
+                    'title': paper.get('title', ''),
+                    'main_author_group': main_author.get('group', ''),
+                    'main_author_affiliation': main_author.get('affiliation', ''),
+                    'co_author_group': '; '.join(a.get('group', '') for a in co_authors),
+                    'co_author_affiliation': '; '.join(a.get('affiliation', '') for a in co_authors),
+                    'organizers': '; '.join(item.get('organizers', [])),
+                    'chairperson': item.get('chairperson', ''),
+                    'category': item.get('category', ''),
+                    'subcategory': item.get('subcategory', '')
+                }
+                rows.append(row)
         
-        # 必要なカラムの順序を定義
+        # DataFrameの作成
+        df = pd.DataFrame(rows)
+        
+        # 列の順序を指定
         columns = [
-            'no', 'session_name', 'session_code', 'overview',
-            'paper_no', 'title', 'main_author_group', 'main_author_affiliation',
-            'co_author_group', 'co_author_affiliation', 'organizers', 'chairperson'
+            'session_name',
+            'session_code',
+            'overview',
+            'paper_no',
+            'title',
+            'main_author_group',
+            'main_author_affiliation',
+            'co_author_group',
+            'co_author_affiliation',
+            'organizers',
+            'chairperson',
+            'category',
+            'subcategory'
         ]
         
-        # 不足しているカラムを追加
-        for col in columns:
-            if col not in df.columns:
-                df[col] = ''
-        
-        # カラムの順序を整える
+        # 指定した列の順序でDataFrameを並び替え
         df = df[columns]
         
-        # 連番を追加
-        df['no'] = range(1, len(df) + 1)
-        
         # Excelファイルに書き込み
-        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-            # データを書き込み
-            df.to_excel(writer, sheet_name='Sessions', index=False)
-            
-            # テキストコンテンツがある場合は別シートに保存
-            if text_content:
-                text_df = pd.DataFrame({'text': [text_content]})
-                text_df.to_excel(writer, sheet_name='Raw Text', index=False)
+        df.to_excel(output_file, index=False)
+        print(f"Excelファイルを出力しました: {output_file}")
         
-        print(f"Excelファイルに保存しました: {output_path}")
-        print(f"書き込まれたレコード数: {len(df)}")
-        return output_path, df
     except Exception as e:
-        print(f"Error: Excelファイルの保存中にエラー: {e}")
-        return None, None
+        print(f"Excelファイルの書き込み中にエラーが発生しました: {str(e)}")
