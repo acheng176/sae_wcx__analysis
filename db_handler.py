@@ -24,6 +24,7 @@ class DatabaseHandler:
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                no INTEGER,
                 year INTEGER,
                 session_name TEXT,
                 session_code TEXT,
@@ -56,17 +57,22 @@ class DatabaseHandler:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
+            # 現在の最大noを取得
+            cursor.execute("SELECT MAX(no) FROM sessions")
+            max_no = cursor.fetchone()[0] or 0
+            
             # データの挿入
-            for item in data:
+            for i, item in enumerate(data, 1):
                 cursor.execute('''
                     INSERT INTO sessions (
-                        year, session_name, session_code, overview,
+                        no, year, session_name, session_code, overview,
                         category, subcategory, paper_no, title,
                         main_author_group, main_author_affiliation,
                         co_author_group, co_author_affiliation,
                         organizers, chairperson
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
+                    max_no + i,  # 連番を設定
                     year,
                     item.get('session_name', ''),
                     item.get('session_code', ''),

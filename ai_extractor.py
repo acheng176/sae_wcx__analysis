@@ -288,29 +288,39 @@ def get_extraction_prompt(text):
 Please extract structured data from the following text according to these specific rules:
 
 1. Session Information:
-   - Session Code: Extract the code that follows "Session Code" at the start of each paragraph
-   - Session Name: Extract from the line immediately before the "Session Code"
-   - Overview: Extract the paragraph between the "Room" line and lines starting with "Moderators", "Organizers", or "Panelists"
-     * If no overview exists, use an empty string
-     * If session name contains "panel discussion:", use "panel discussion" as overview
+   - Session Code: Extract the code that follows "Session Code" (e.g., PFL750)
+   - Session Name: Extract the complete session name from the line before "Session Code"
+   - Overview: Extract the complete paragraph that appears after "Room" and before the first "Time" or "Paper No."
 
-2. Paper Information (from table format):
-   - Paper Number (paper_no): Extract all paper numbers in the session under the "Paper No." column
-     * Format: 202x-xx-xxx or "ORAL ONLY"
+2. Paper Information:
+   - Paper Number (paper_no): Extract the number in format "202x-xx-xxxx" or "ORAL ONLY"
+   - Title: Extract the complete title text that appears after the paper number
    
-   - Title: Extract from the "Title" column to the right of each paper number
-   
-   - Main Author Information:
-     * Main Author Group (main_author_group): Extract names ending with comma (,) before the first semicolon (;) or paragraph break in the line below the title
-     * Main Author Affiliation (main_author_affiliation): Extract institution names from the line directly below the title, ending at semicolon (;) or paragraph break
-   
-   - Co-Author Information:
-     * Co-Author Group (co_author_group): Extract all names ending with comma (,) that appear after the main author's affiliation (after the first semicolon)
-     * Co-Author Affiliation (co_author_affiliation): Extract institution names that follow the co-author group
+   - Author Information Rules:
+     * For each paper's author line:
+       - Main Author Group: Extract ALL names that appear BEFORE the first institution
+         Example: "Xiaofeng Yin, Hong Li, Xihua University" → "Xiaofeng Yin, Hong Li"
+       
+       - Main Author Affiliation: Extract the FIRST institution that appears
+         Example: "Xiaofeng Yin, Hong Li, Xihua University" → "Xihua University"
+       
+       - Co-Author Group: Extract ALL names that appear AFTER the first institution and BEFORE their institutions
+         Example: "Xiaofeng Yin, Hong Li, Xihua University; Jinhong Zhang, Jeely Auto Research" → "Jinhong Zhang"
+       
+       - Co-Author Affiliation: Extract ALL institutions that appear after co-author names
+         Example: "Xiaofeng Yin, Hong Li, Xihua University; Jinhong Zhang, Jeely Auto Research" → "Jeely Auto Research"
 
 3. Additional Session Information:
-   - Organizers: Extract text following the "Organizers" line
-   - Chairperson: Extract text following the "Chairperson" line
+   - Organizers: 
+     * Look for lines starting with "Organizers -" or "Organizers:"
+     * Extract the ENTIRE text that follows, including all names and affiliations
+     * Keep all semicolons (;) and commas (,) in their original positions
+     * Example: "Organizers - John Smith, Company A; Jane Doe, Company B" → "John Smith, Company A; Jane Doe, Company B"
+
+   - Chairperson:
+     * Look for text starting with "Chairperson -" or "Chairperson:"
+     * Extract the COMPLETE text that follows, including all names and affiliations
+     * Example: "Chairperson - Dan DeMescovo, Oakland University" → "Dan DeMescovo, Oakland University"
 
 Text to process:
 {text}
@@ -334,15 +344,17 @@ Required Output Format:
 
 Important Requirements:
 1. Output MUST be in valid JSON format
-2. Extract ALL information completely for each session
-3. Use empty string ("") when information is not found
-4. Create separate objects for multiple sessions
-5. Accurately extract data from table format
-6. Maintain the exact structure of names and affiliations as they appear
-7. Include ALL co-authors and their affiliations
-8. Do not skip any papers in the session
-9. Preserve the exact paper numbers and titles
-10. Keep all author names in their original format
+2. Extract ALL information exactly as it appears in the text
+3. Do not modify, reformat, or clean any extracted text
+4. Keep all original punctuation (commas, semicolons)
+5. For author information:
+   - Main authors are those appearing BEFORE the first institution
+   - Co-authors are those appearing AFTER the first institution
+   - Keep exact name order and grouping
+6. For organizers and chairperson:
+   - Extract the COMPLETE text as it appears
+   - Keep all original formatting and punctuation
+   - Include ALL names and affiliations
 
 Please process the text and return ONLY the JSON output without any additional explanation or formatting."""
 
