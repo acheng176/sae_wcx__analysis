@@ -69,49 +69,35 @@ def write_to_excel(data, year, output_dir=r"output\file"):
         # データの整形
         rows = []
         for item in data:
-            # 論文情報がない場合は、セッション自体を1行として扱う
-            if not item.get('papers', []):
-                row = {
-                    'session_name': item.get('session_name', ''),
-                    'session_code': item.get('session_code', ''),
-                    'overview': item.get('overview', ''),
-                    'category': item.get('category', 'Others'),  # カテゴリーが指定されていない場合は'Others'を使用
-                    'subcategory': item.get('subcategory', 'Others'),  # サブカテゴリーが指定されていない場合は'Others'を使用
-                    'paper_no': '',
-                    'title': '',
-                    'main_author_group': '',
-                    'main_author_affiliation': '',
-                    'co_author_group': '',
-                    'co_author_affiliation': '',
-                    'organizers': '; '.join(item.get('organizers', [])),
-                    'chairperson': item.get('chairperson', '')
-                }
-                rows.append(row)
-            else:
-                for paper in item.get('papers', []):
-                    main_author = paper.get('main_author', {})
-                    co_authors = paper.get('co_authors', [])
-                    
-                    row = {
-                        'session_name': item.get('session_name', ''),
-                        'session_code': item.get('session_code', ''),
-                        'overview': item.get('overview', ''),
-                        'category': item.get('category', 'Others'),  # カテゴリーが指定されていない場合は'Others'を使用
-                        'subcategory': item.get('subcategory', 'Others'),  # サブカテゴリーが指定されていない場合は'Others'を使用
-                        'paper_no': paper.get('paper_no', ''),
-                        'title': paper.get('title', ''),
-                        'main_author_group': main_author.get('group', ''),
-                        'main_author_affiliation': main_author.get('affiliation', ''),
-                        'co_author_group': '; '.join(a.get('group', '') for a in co_authors),
-                        'co_author_affiliation': '; '.join(a.get('affiliation', '') for a in co_authors),
-                        'organizers': '; '.join(item.get('organizers', [])),
-                        'chairperson': item.get('chairperson', '')
-                    }
-                    rows.append(row)
+            # 各アイテムを直接行として追加
+            row = {
+                'session_name': item.get('session_name', ''),
+                'session_code': item.get('session_code', ''),
+                'overview': item.get('overview', ''),
+                'category': item.get('category', 'Others'),
+                'subcategory': item.get('subcategory', 'Others'),
+                'paper_no': item.get('paper_no', ''),
+                'title': item.get('title', ''),
+                'main_author_group': clean_string_array(item.get('main_author_group', '')),
+                'main_author_affiliation': clean_string_array(item.get('main_author_affiliation', '')),
+                'co_author_group': clean_string_array(item.get('co_author_group', '')),
+                'co_author_affiliation': clean_string_array(item.get('co_author_affiliation', '')),
+                'organizers': clean_string_array(item.get('organizers', '')),
+                'chairperson': clean_string_array(item.get('chairperson', ''))
+            }
+            rows.append(row)
+            
+            # デバッグ出力
+            print("\n--- データ変換結果 ---")
+            print(f"Session: {row['session_name']} ({row['session_code']})")
+            print(f"Paper: {row['paper_no']}")
+            print(f"Authors: {row['main_author_group']} ({row['main_author_affiliation']})")
+            print(f"Co-Authors: {row['co_author_group']} ({row['co_author_affiliation']})")
+            print("--------------------")
         
         if not rows:
             print("Error: 有効なデータがありません")
-            return None
+            return None, None
         
         # DataFrameを作成
         df = pd.DataFrame(rows)
@@ -199,17 +185,12 @@ def write_to_excel(data, year, output_dir=r"output\file"):
             "Others": "その他"
         }
         
-        # カテゴリーを日本語に変換（必ず何らかの値が設定される）
-        df['category'] = df['category'].map(category_mapping).fillna('その他')
-        
-        # サブカテゴリーを日本語に変換（該当なしの場合は「その他」）
-        df['subcategory'] = df['subcategory'].map(subcategory_mapping).fillna('その他')
-        
-        # Excelファイルに書き込み
+        # Excelファイルに保存
         df.to_excel(output_file, index=False)
-        print(f"Excelファイルを出力しました: {output_file}")
-        return output_file
+        print(f"\nExcelファイルを保存しました: {output_file}")
+        
+        return output_file, df
         
     except Exception as e:
-        print(f"Excelファイルの書き込み中にエラーが発生しました: {str(e)}")
-        return None
+        print(f"Error: Excelファイルの作成中にエラー: {e}")
+        return None, None

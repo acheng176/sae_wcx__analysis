@@ -211,76 +211,6 @@ def clean_json_response(content):
     except Exception as e:
         print(f"Error: JSONクリーンアップ中にエラー: {str(e)}")
         return '[{"Session_Name":"Unknown","Session_Code":"Unknown","Paper_No":"Unknown"}]'
-    
-
-def fix_json_errors(content):
-    """JSONデータの一般的なエラーを修正する試み"""
-    try:
-        # 異常な制御文字をさらに削除
-        content = re.sub(r'[\x00-\x1F]+', ' ', content)
-        
-        # エスケープの問題を修正
-        content = content.replace('\\"', '"')  # 誤ってエスケープされた引用符を修正
-        content = re.sub(r'([^\\])\\([^"\\bfnrtu])', r'\1\2', content)  # 無効なエスケープを削除
-
-        # 引用符のエスケープを適切に行う
-        content = re.sub(r'([^\\])"([^"]*)"', r'\1\\"\2\\"', content)
-        content = content.replace('\\\\', '\\')  # 二重バックスラッシュを修正
-        
-        # 壊れた引用符を修正
-        content = re.sub(r'([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', content)
-        
-        # 値の引用符の問題を修正
-        content = re.sub(r':\s*([a-zA-Z][a-zA-Z0-9_]*)\s*(,|})', r': "\1"\2', content)
-        
-        # 引用符で囲まれていないnull、true、falseは修正しない
-        content = re.sub(r':\s*null\s*(,|})', r': null\1', content)
-        content = re.sub(r':\s*true\s*(,|})', r': true\1', content)
-        content = re.sub(r':\s*false\s*(,|})', r': false\1', content)
-        
-        # 構文エラーが発生しそうな箇所を特定して修正
-        lines = content.split('\n')
-        for i in range(len(lines)):
-            # 行末の不完全な引用符を修正
-            if lines[i].count('"') % 2 == 1:
-                if i < len(lines) - 1:
-                    # 次の行の先頭に引用符を追加
-                    lines[i+1] = '"' + lines[i+1]
-                else:
-                    # 最終行の場合は行末に引用符を追加
-                    lines[i] = lines[i] + '"'
-        
-        content = '\n'.join(lines)
-        
-        # 最後のJSONオブジェクトの閉じ括弧が欠けている場合の修正
-        if content.count('{') > content.count('}'):
-            content = content + '}'
-        
-        # 配列の閉じ括弧が欠けている場合の修正
-        if content.count('[') > content.count(']'):
-            content = content + ']'
-        
-        # 複雑なオブジェクトの場合、より単純なオブジェクトを抽出
-        try:
-            json.loads(content)
-        except json.JSONDecodeError:
-            # シンプルな手法: 単一オブジェクトを抽出
-            if content.strip().startswith('[{') and '}]' in content:
-                first_obj_end = content.find('}', content.find('{')) + 1
-                if first_obj_end > 0:
-                    simple_obj = content[:first_obj_end].replace('[{', '{') + '}'
-                    try:
-                        json.loads(simple_obj)
-                        print("単一オブジェクトを抽出しました")
-                        return f"[{simple_obj}]"
-                    except:
-                        pass
-        
-        print("JSONエラーの修正を試みました")
-        return content
-    except Exception as e:
-        print(f"JSONエラー修正中に例外が発生: {e}")
-        return content
 
 def get_extraction_prompt(text):
     """Generate the extraction prompt"""
@@ -290,7 +220,17 @@ Please extract structured data from the following text according to these specif
 1. Session Information:
    - Session Code: Extract the code that follows "Session Code" (e.g., PFL750)
    - Session Name: Extract the complete session name from the line before "Session Code"
-   - Overview: Extract the complete paragraph that appears after "Room" and before the first "Time" or "Paper No."
+   - Overview: Extract text according to these specific rules:
+     * Look for a paragraph between the "Room" line and the first occurrence of any of these keywords:
+       - "Time"
+       - "Paper No."
+       - "Organizers"
+       - "Chairperson"
+       - "Panelist"
+       - "Speaker"
+     * If such a paragraph exists and contains descriptive text about the session, use that as overview
+     * If no such paragraph exists or if the text only contains room number and time (e.g., "Room 140 B 1:30 p.m."), set overview to empty string ("")
+     * Special case: If session name contains "panel discussion", use "panel discussion" as overview even if no paragraph exists
 
 2. Paper Information:
    - Paper Number (paper_no): Extract the number in format "202x-xx-xxxx" or "ORAL ONLY"
@@ -315,12 +255,10 @@ Please extract structured data from the following text according to these specif
      * Look for lines starting with "Organizers -" or "Organizers:"
      * Extract the ENTIRE text that follows, including all names and affiliations
      * Keep all semicolons (;) and commas (,) in their original positions
-     * Example: "Organizers - John Smith, Company A; Jane Doe, Company B" → "John Smith, Company A; Jane Doe, Company B"
-
+   
    - Chairperson:
      * Look for text starting with "Chairperson -" or "Chairperson:"
      * Extract the COMPLETE text that follows, including all names and affiliations
-     * Example: "Chairperson - Dan DeMescovo, Oakland University" → "Dan DeMescovo, Oakland University"
 
 Text to process:
 {text}
@@ -347,14 +285,15 @@ Important Requirements:
 2. Extract ALL information exactly as it appears in the text
 3. Do not modify, reformat, or clean any extracted text
 4. Keep all original punctuation (commas, semicolons)
-5. For author information:
+5. For overview field:
+   - Must be empty string ("") if no descriptive paragraph exists
+   - Must be empty string ("") if only room and time information exists
+   - Must be "panel discussion" if session name contains it
+   - Must contain the actual overview text only if a descriptive paragraph exists
+6. For author information:
    - Main authors are those appearing BEFORE the first institution
    - Co-authors are those appearing AFTER the first institution
    - Keep exact name order and grouping
-6. For organizers and chairperson:
-   - Extract the COMPLETE text as it appears
-   - Keep all original formatting and punctuation
-   - Include ALL names and affiliations
 
 Please process the text and return ONLY the JSON output without any additional explanation or formatting."""
 
@@ -428,6 +367,16 @@ def extract_structured_data(text, debug_mode=False, debug_chunk_count=5):
                         
                         if isinstance(data, list):
                             print(f"Success: {len(data)}件のレコードを抽出")
+                            # 各レコードの著者情報を表示
+                            for record in data:
+                                print("\n--- 抽出された著者情報 ---")
+                                print(f"Paper No: {record.get('paper_no', 'N/A')}")
+                                print(f"Title: {record.get('title', 'N/A')[:100]}...")  # タイトルは最初の100文字まで
+                                print(f"Main Authors: {record.get('main_author_group', 'N/A')}")
+                                print(f"Main Affiliation: {record.get('main_author_affiliation', 'N/A')}")
+                                print(f"Co-Authors: {record.get('co_author_group', 'N/A')}")
+                                print(f"Co-Author Affiliations: {record.get('co_author_affiliation', 'N/A')}")
+                                print("------------------------")
                             all_results.extend(data)
                         else:
                             print("Warning: レスポンスが配列ではありません。単一オブジェクトとして処理します。")
