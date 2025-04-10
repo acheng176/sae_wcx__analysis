@@ -37,6 +37,16 @@ def validate_session_name(session_name, session_code, chunk):
 
 def split_text(text):
     """テキストをセッション単位で分割する"""
+    # まず、ページヘッダーを完全に除去
+    text = re.sub(
+        r'(?:^|\n)\s*WCX SAE World Congress Experience\s*\n'
+        r'\s*Technical Session Schedule\s*\n'
+        r'\s*As of\s+[A-Za-z]+\s+\d+,\s+\d{4}\s+\d{1,2}:\d{2}:\d{2}\s*(?:AM|PM)?\s*\n',
+        '\n',
+        text,
+        flags=re.MULTILINE | re.IGNORECASE
+    )
+    
     # セッションの区切りパターン
     session_pattern = r'(?:^|\n\n)([^\n]+)\n\s*Session Code\s+([A-Z0-9]+)'
     sessions = re.finditer(session_pattern, text, re.MULTILINE)
@@ -64,7 +74,7 @@ def split_text(text):
             if valid_lines:
                 session_name = valid_lines[0]
                 print(f"Info: 代替のセッション名を使用: {session_name}")
-        else:
+            else:
                 print(f"Error: 有効なセッション名が見つかりませんでした: {session_code}")
                 continue
         
@@ -72,20 +82,17 @@ def split_text(text):
         if i < len(session_starts) - 1:
             # 次のセッションの直前まで
             next_session_start = session_starts[i + 1][0]
-            # セッションの内容を抽出（ページ区切りを無視）
             session_content = text[start:next_session_start].strip()
-            
-            # ページヘッダーを削除
-            session_content = re.sub(r'\n\s*WCX SAE World Congress Experience\s*\n[^\n]*\n[^\n]*\n', '\n', session_content)
-            session_content = re.sub(r'\n\s*Technical Session Schedule\s*\n', '\n', session_content)
-            session_content = re.sub(r'\n\s*(?:Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Monday),\s+[A-Za-z]+\s+\d+\s*\n', '\n', session_content)
         else:
             # 最後のセッションは文書の最後まで
             session_content = text[start:].strip()
-            # 最後のセッションでもページヘッダーを削除
-            session_content = re.sub(r'\n\s*WCX SAE World Congress Experience\s*\n[^\n]*\n[^\n]*\n', '\n', session_content)
-            session_content = re.sub(r'\n\s*Technical Session Schedule\s*\n', '\n', session_content)
-            session_content = re.sub(r'\n\s*(?:Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Monday),\s+[A-Za-z]+\s+\d+\s*\n', '\n', session_content)
+        
+        # 残っているページヘッダーやフッターを削除
+        session_content = re.sub(r'\n\s*(?:Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Monday),\s+[A-Za-z]+\s+\d+\s*\n', '\n', session_content)
+        session_content = re.sub(r'\n\s*Page\s+\d+\s+of\s+\d+\s*\n', '\n', session_content)
+        
+        # 連続する空行を1つの空行に置換
+        session_content = re.sub(r'\n\s*\n\s*\n+', '\n\n', session_content)
         
         # チャンクを構築
         chunk = f"{session_name}\n{session_content}"
@@ -276,54 +283,77 @@ def fix_json_errors(content):
         return content
 
 def get_extraction_prompt(text):
-    """データ抽出用のプロンプトを生成"""
+    """Generate the extraction prompt"""
     return f"""
-以下のテキストからセッション情報を抽出してください。テキストは複数のセッションを含む可能性があります。
+Please extract structured data from the following text according to these specific rules:
 
-抽出ルール:
-1. セッション名（session_name）は「Session Code」の前の行から抽出
-2. 概要（overview）は「Room」の行の後から、「Moderators」「Organizers」「Panelists」などの行の前までの段落を抽出
-3. セッションコード（session_code）は「Session Code」の直後の行から抽出
-4. 論文情報は表形式で抽出し、以下のフィールドを含める:
-   - paper_no: 論文番号
-   - title: 論文タイトル
-   - main_author_group: 筆頭著者の所属グループ
-   - main_author_affiliation: 筆頭著者の所属機関
-   - co_author_group: 共著者の所属グループ
-   - co_author_affiliation: 共著者の所属機関
-5. オーガナイザー（organizers）は「Organizers」の行の後から抽出
-6. 議長（chairperson）は「Chairperson」の行の後から抽出
+1. Session Information:
+   - Session Code: Extract the code that follows "Session Code" at the start of each paragraph
+   - Session Name: Extract from the line immediately before the "Session Code"
+   - Overview: Extract the paragraph between the "Room" line and lines starting with "Moderators", "Organizers", or "Panelists"
+     * If no overview exists, use an empty string
+     * If session name contains "panel discussion:", use "panel discussion" as overview
 
-テキスト:
+2. Paper Information (from table format):
+   - Paper Number (paper_no): Extract all paper numbers in the session under the "Paper No." column
+     * Format: 202x-xx-xxx or "ORAL ONLY"
+   
+   - Title: Extract from the "Title" column to the right of each paper number
+   
+   - Main Author Information:
+     * Main Author Group (main_author_group): Extract names ending with comma (,) before the first semicolon (;) or paragraph break in the line below the title
+     * Main Author Affiliation (main_author_affiliation): Extract institution names from the line directly below the title, ending at semicolon (;) or paragraph break
+   
+   - Co-Author Information:
+     * Co-Author Group (co_author_group): Extract all names ending with comma (,) that appear after the main author's affiliation (after the first semicolon)
+     * Co-Author Affiliation (co_author_affiliation): Extract institution names that follow the co-author group
+
+3. Additional Session Information:
+   - Organizers: Extract text following the "Organizers" line
+   - Chairperson: Extract text following the "Chairperson" line
+
+Text to process:
 {text}
 
-出力形式:
+Required Output Format:
 [
     {{
-        "session_name": "セッション名",
-        "session_code": "セッションコード",
-        "overview": "セッション概要",
-        "paper_no": "論文番号",
-        "title": "論文タイトル",
-        "main_author_group": "筆頭著者の所属グループ",
-        "main_author_affiliation": "筆頭著者の所属機関",
-        "co_author_group": "共著者の所属グループ",
-        "co_author_affiliation": "共著者の所属機関",
-        "organizers": "オーガナイザー",
-        "chairperson": "議長"
+        "session_name": "",
+        "session_code": "",
+        "overview": "",
+        "paper_no": "",
+        "title": "",
+        "main_author_group": "",
+        "main_author_affiliation": "",
+        "co_author_group": "",
+        "co_author_affiliation": "",
+        "organizers": "",
+        "chairperson": ""
     }}
 ]
 
-注意事項:
-1. 必ずJSON形式で出力してください
-2. 各セッションの情報を完全に抽出してください
-3. 情報が見つからない場合は空文字列（""）を使用してください
-4. 複数のセッションがある場合は、それぞれを別のオブジェクトとして出力してください
-5. 表形式のデータは正確に抽出してください
-"""
+Important Requirements:
+1. Output MUST be in valid JSON format
+2. Extract ALL information completely for each session
+3. Use empty string ("") when information is not found
+4. Create separate objects for multiple sessions
+5. Accurately extract data from table format
+6. Maintain the exact structure of names and affiliations as they appear
+7. Include ALL co-authors and their affiliations
+8. Do not skip any papers in the session
+9. Preserve the exact paper numbers and titles
+10. Keep all author names in their original format
 
-def extract_structured_data(text):
-    """テキストから構造化データを抽出"""
+Please process the text and return ONLY the JSON output without any additional explanation or formatting."""
+
+def extract_structured_data(text, debug_mode=False, debug_chunk_count=5):
+    """テキストから構造化データを抽出する
+    
+    Args:
+        text (str): 処理するテキスト
+        debug_mode (bool): デバッグモードの場合True
+        debug_chunk_count (int): デバッグモード時に処理するチャンク数
+    """
     try:
         setup_azure_openai()
         
@@ -336,6 +366,11 @@ def extract_structured_data(text):
         # セッション単位で分割
         chunks = split_text(text)
         print(f"{len(chunks)}個のチャンクに分割完了")
+        
+        # デバッグモードの場合はチャンク数を制限
+        if debug_mode:
+            chunks = chunks[:debug_chunk_count]
+            print(f"\nデバッグモード: 最初の{debug_chunk_count}個のチャンクのみを処理します")
         
         all_results = []
         seen_sessions = set()
@@ -394,7 +429,7 @@ def extract_structured_data(text):
                 
             except Exception as chunk_error:
                 print(f"Error: チャンク {i} の処理中にエラーが発生: {str(chunk_error)}")
-                continue
+            continue
         
         print(f"\n処理完了: 合計 {len(all_results)} 件のレコードを抽出")
         print(f"抽出されたユニークなセッション数: {len({r['session_code'] for r in all_results})}")
@@ -454,6 +489,43 @@ def save_to_json(data, output_file=None):
     except Exception as e:
         print(f"Error: ファイル保存中にエラー: {e}")
         return None
+
+def validate_data_format(data):
+    """データの形式を検証する
+    
+    Args:
+        data (list): 検証するデータのリスト
+        
+    Returns:
+        bool: データが有効な場合はTrue、そうでない場合はFalse
+    """
+    if not isinstance(data, list):
+        print("Error: データはリストである必要があります")
+        return False
+    
+    required_fields = [
+        "session_name",
+        "session_code",
+        "overview",
+        "paper_no",
+        "title"
+    ]
+    
+    for item in data:
+        if not isinstance(item, dict):
+            print("Error: 各データ項目は辞書である必要があります")
+            return False
+            
+        for field in required_fields:
+            if field not in item:
+                print(f"Error: 必須フィールド '{field}' が欠けています")
+                return False
+                
+            if not isinstance(item[field], str):
+                print(f"Error: フィールド '{field}' は文字列である必要があります")
+                return False
+    
+    return True
 
 def main():
     try:

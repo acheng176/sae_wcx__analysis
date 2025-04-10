@@ -45,19 +45,34 @@ def extract_year_from_text(text):
         print(f"Warning: 年の抽出中にエラー: {e}")
         return str(datetime.now().year)
 
-def write_to_excel(data, year, output_dir="output"):
+def write_to_excel(data, year, output_dir=r"output\file"):
     """抽出したデータをExcelファイルに書き込む"""
     try:
-        # 出力ディレクトリの作成
-        os.makedirs(output_dir, exist_ok=True)
+        # デバッグ情報の出力
+        print(f"現在の作業ディレクトリ: {os.getcwd()}")
+        print(f"指定された出力ディレクトリ: {output_dir}")
+        
+        # 出力ディレクトリの作成（パスを正規化）
+        output_dir = os.path.normpath(output_dir)
+        print(f"正規化後の出力ディレクトリ: {output_dir}")
+        
+        # ディレクトリの存在確認
+        if not os.path.exists(output_dir):
+            print(f"ディレクトリが存在しないため作成します: {output_dir}")
+            os.makedirs(output_dir, exist_ok=True)
+            print(f"ディレクトリ作成後の状態: {os.path.exists(output_dir)}")
         
         # 出力ファイル名の生成（年を文字列に変換）
         output_file = os.path.join(output_dir, f"sae_wcx_{str(year)}.xlsx")
+        print(f"出力ファイルの完全パス: {output_file}")
         
         # データの整形
         rows = []
         for item in data:
-            for paper in item.get('papers', []):
+            # papersが存在しない場合は、item自体を1つの論文として扱う
+            papers = item.get('papers', [item])
+            
+            for paper in papers:
                 # 著者情報の処理
                 authors = paper.get('authors', [])
                 main_author = authors[0] if authors else {}
@@ -67,8 +82,8 @@ def write_to_excel(data, year, output_dir="output"):
                     'session_name': item.get('session_name', ''),
                     'session_code': item.get('session_code', ''),
                     'overview': item.get('overview', ''),
-                    'category': item.get('category', ''),
-                    'subcategory': item.get('subcategory', ''),
+                    'category': item.get('category', 'Others'),  # カテゴリーが指定されていない場合は'Others'を使用
+                    'subcategory': item.get('subcategory', 'Others'),  # サブカテゴリーが指定されていない場合は'Others'を使用
                     'paper_no': paper.get('paper_no', ''),
                     'title': paper.get('title', ''),
                     'main_author_group': main_author.get('group', ''),
@@ -79,6 +94,10 @@ def write_to_excel(data, year, output_dir="output"):
                     'chairperson': item.get('chairperson', '')
                 }
                 rows.append(row)
+        
+        if not rows:
+            print("Error: 有効なデータがありません")
+            return None
         
         # DataFrameの作成
         df = pd.DataFrame(rows)
@@ -142,38 +161,31 @@ def write_to_excel(data, year, output_dir="output"):
             "Others": "その他"
         }
         
-        # カテゴリーとサブカテゴリーを日本語に変換
-        df['category'] = df['category'].map(category_mapping).fillna('その他')
-        df['subcategory'] = df['subcategory'].map(subcategory_mapping).fillna('その他')
-        
         # 列の順序を指定
-        columns = [
-            'session_name', 'session_code', 'overview',
-            'category', 'subcategory', 'paper_no', 'title',
-            'main_author_group', 'main_author_affiliation',
-            'co_author_group', 'co_author_affiliation',
-            'organizers', 'chairperson'
+        column_order = [
+            'session_name',
+            'session_code',
+            'overview',
+            'category',
+            'subcategory',
+            'paper_no',
+            'title',
+            'main_author_group',
+            'main_author_affiliation',
+            'co_author_group',
+            'co_author_affiliation',
+            'organizers',
+            'chairperson'
         ]
         
-        # カラム名を日本語に変換
-        column_names = {
-            'session_name': 'セッション名',
-            'session_code': 'セッションコード',
-            'overview': '概要',
-            'category': 'カテゴリー',
-            'subcategory': 'サブカテゴリー',
-            'paper_no': '論文番号',
-            'title': 'タイトル',
-            'main_author_group': '筆頭著者グループ',
-            'main_author_affiliation': '筆頭著者所属',
-            'co_author_group': '共著者グループ',
-            'co_author_affiliation': '共著者所属',
-            'organizers': 'オーガナイザー',
-            'chairperson': '議長'
-        }
+        # 列の順序を変更
+        df = df[column_order]
         
-        # 指定した列の順序でDataFrameを並び替え
-        df = df[columns].rename(columns=column_names)
+        # カテゴリーを日本語に変換（必ず何らかの値が設定される）
+        df['category'] = df['category'].map(category_mapping).fillna('その他')
+        
+        # サブカテゴリーを日本語に変換（該当なしの場合は「その他」）
+        df['subcategory'] = df['subcategory'].map(subcategory_mapping).fillna('その他')
         
         # Excelファイルに書き込み
         df.to_excel(output_file, index=False)

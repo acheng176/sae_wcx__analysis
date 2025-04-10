@@ -128,3 +128,47 @@ class DatabaseHandler:
         except Exception as e:
             print(f"Error: グラフ作成中にエラー: {e}")
             return None 
+
+def validate_db_input(data, year):
+    """データベース入力の妥当性を検証する
+    
+    Args:
+        data (list): 検証するデータのリスト
+        year (int or str): 年
+        
+    Returns:
+        bool: データが有効な場合はTrue、そうでない場合はFalse
+    """
+    if not isinstance(data, list):
+        print("Error: データはリストである必要があります")
+        return False
+        
+    if not isinstance(year, (int, str)):
+        print("Error: 年は整数または文字列である必要があります")
+        return False
+        
+    required_fields = [
+        "session_name",
+        "session_code",
+        "overview",
+        "paper_no",
+        "title",
+        "category",
+        "subcategory"
+    ]
+    
+    for item in data:
+        if not isinstance(item, dict):
+            print("Error: 各データ項目は辞書である必要があります")
+            return False
+            
+        for field in required_fields:
+            if field not in item:
+                print(f"Error: 必須フィールド '{field}' が欠けています")
+                return False
+                
+            if not isinstance(item[field], str):
+                print(f"Error: フィールド '{field}' は文字列である必要があります")
+                return False
+    
+    return True 
