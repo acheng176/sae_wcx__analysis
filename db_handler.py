@@ -4,15 +4,24 @@ import os
 from datetime import datetime
 
 class DatabaseHandler:
-    def __init__(self):
-        """データベースハンドラの初期化"""
+    def __init__(self, use_temp_db=False):
+        """データベースハンドラの初期化
+        
+        Args:
+            use_temp_db (bool): 一時的なデータベースを使用するかどうか
+        """
         # 出力ディレクトリの作成
         self.output_dir = os.path.join("output", "db")
         os.makedirs(self.output_dir, exist_ok=True)
         
         # データベースファイルのパス
-        self.db_path = os.path.join(self.output_dir, "wcx_sessions.db")
-        print(f"データベースファイルの保存先: {self.db_path}")
+        if use_temp_db:
+            self.db_path = os.path.join(self.output_dir, "wcx_sessions_temp.db")
+            print(f"一時的なデータベースファイルの保存先: {self.db_path}")
+        else:
+            self.db_path = os.path.join(self.output_dir, "wcx_sessions.db")
+            print(f"データベースファイルの保存先: {self.db_path}")
+            
         self.create_tables()
 
     def create_tables(self):

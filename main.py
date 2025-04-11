@@ -5,6 +5,8 @@ from ai_extractor import extract_structured_data
 from categorizer import add_categories_to_data
 from db_handler import DatabaseHandler, validate_db_input
 from excel_writer import write_to_excel, extract_year_from_text
+from fix_missing_data import fix_missing_session_data
+import sqlite3
 
 def save_to_json(data, year=None, output_dir="output/json"):
     """抽出したデータをJSONファイルに保存する"""
@@ -77,7 +79,7 @@ def main():
             print(f"Error: カテゴリーの分類中にエラーが発生: {str(e)}")
             return
 
-        # データの検証（カテゴリー分類後）
+        # データの検証
         try:
             print("\nデータの検証を開始します...")
             if not validate_db_input(categorized_data, year):
@@ -96,18 +98,45 @@ def main():
                 print("Error: データベースへの保存に失敗しました")
                 return
             print("データベースへの保存が完了しました")
+            
+            # 欠損データの補完
+            print("\n欠損データの補完を開始します...")
+            fix_missing_session_data()
+            
+            # 補完済みデータの取得
+            print("\n補完済みデータの取得を開始します...")
+            with sqlite3.connect(db.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT *
+                    FROM sessions
+                    WHERE year = ?
+                    ORDER BY no
+                """, (year,))
+                columns = [description[0] for description in cursor.description]
+                rows = cursor.fetchall()
+                
+                # 辞書形式のリストに変換
+                completed_data = []
+                for row in rows:
+                    data_dict = {}
+                    for i, col in enumerate(columns):
+                        if col not in ['id', 'created_at']:  # 内部管理用カラムを除外
+                            data_dict[col] = row[i]
+                    completed_data.append(data_dict)
+                
+                print(f"補完済みデータ数: {len(completed_data)}")
+                
         except Exception as e:
-            print(f"Error: データベースへの保存中にエラーが発生: {str(e)}")
+            print(f"Error: 欠損データの補完中にエラーが発生: {str(e)}")
             return
         
         # Excelファイルへの書き込み
         try:
             print("\nExcelファイルへの書き込みを開始します...")
-            excel_file, df = write_to_excel(categorized_data, year)
-            if not excel_file:
+            if not write_to_excel(completed_data, year):  # 補完済みデータを使用
                 print("Error: Excelファイルへの書き込みに失敗しました")
                 return
-            print(f"Excelファイルを保存しました: {excel_file}")
         except Exception as e:
             print(f"Error: Excelファイルへの書き込み中にエラーが発生: {str(e)}")
             return
@@ -115,7 +144,7 @@ def main():
         # JSONファイルへの保存
         try:
             print("\nJSONファイルへの保存を開始します...")
-            if not save_to_json(categorized_data, year):
+            if not save_to_json(completed_data, year):  # 補完済みデータを使用
                 print("Error: JSONファイルへの保存に失敗しました")
                 return
         except Exception as e:
