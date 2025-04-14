@@ -161,7 +161,7 @@ def chunk_text(text, max_chunk_size=6000):
             print(f"Progress: チャンク {len(chunks)} 作成完了 ({chunk_end}/{len(text)} 文字処理済み)")
         
         return chunks
-    except Exception as e:
+        except Exception as e:
         print(f"Error: テキスト分割中にエラー発生: {e}")
         return [text]  # エラー時は元のテキストを1つのチャンクとして返す
 
@@ -492,8 +492,8 @@ def main():
     try:
         # テキストファイルから入力を読み込む
         input_file = "input.txt"
-        with open(input_file, 'r', encoding='utf-8') as f:
-            input_text = f.read()
+            with open(input_file, 'r', encoding='utf-8') as f:
+                input_text = f.read()
         
         # 年を抽出して表示
         year = extract_year_from_text(input_text)
