@@ -129,6 +129,24 @@ def create_category_distribution(df, selected_year=None, selected_categories=Non
     if selected_categories:
         filtered_df = filtered_df[filtered_df['category_ja'].isin(selected_categories)]
     
+    # データが空の場合は空のグラフを返す
+    if filtered_df.empty:
+        fig = go.Figure()
+        fig.update_layout(
+            height=400,
+            width=450,
+            annotations=[
+                dict(
+                    text="データがありません",
+                    x=0.5,
+                    y=0.5,
+                    showarrow=False,
+                    font=dict(size=14, color='#666666')
+                )
+            ]
+        )
+        return fig
+    
     # カテゴリー別の集計
     category_counts = filtered_df.groupby('category_ja')['count'].sum().reset_index()
     total = category_counts['count'].sum()
@@ -147,20 +165,25 @@ def create_category_distribution(df, selected_year=None, selected_categories=Non
         hole=0.4,
         marker=dict(colors=colors),
         textposition='auto',
-        texttemplate='%{value:.1f}%',  # パーセンテージを表示
+        texttemplate='%{label}<br>%{value:.1f}%',  # カテゴリ名とパーセンテージを表示
         textinfo='text',  # テキストのみ表示
-        hovertemplate="%{label}<br>%{value:.1f}%<extra></extra>",
+        hovertemplate="<b>%{label}</b><br>構成比: %{value:.1f}%<extra></extra>",
         showlegend=True,
         sort=False
     )])
     
-    # 2%未満のラベルを非表示にする
-    fig.update_traces(
-        textposition=['auto' if val >= 2 else 'none' for val in category_counts['percentage']]
-    )
+    # 6%以上のラベルのみ表示
+    text_positions = []
+    for val in category_counts['percentage']:
+        if val >= 6:
+            text_positions.append('outside')
+        else:
+            text_positions.append('none')
     
-    # タイトルの設定
-    title = '技術カテゴリ分布'
+    fig.update_traces(textposition=text_positions)
+    
+    # タイトルとレイアウトの設定
+    title = 'カテゴリ分布'
     if selected_year:
         title += f' ({selected_year}年)'
     if selected_categories and len(selected_categories) <= 3:
@@ -169,28 +192,29 @@ def create_category_distribution(df, selected_year=None, selected_categories=Non
         title += f' - {len(selected_categories)}カテゴリ選択中'
     
     fig.update_layout(
-        title='あああ',
+        title=title,
         title_font=dict(size=14),
         showlegend=True,
         legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=-0.2,  # 凡例の位置を下に調整
-            xanchor="center",
-            x=0.5,
-            font=dict(size=9),  # フォントサイズを小さく
-            itemsizing='constant'
+            orientation="v",
+            yanchor="middle",
+            y=0.5,
+            xanchor="left",
+            x=-0.5,  # 左側に凡例を配置
+            font=dict(size=9),
+            itemsizing='constant',
+            itemwidth=30
         ),
-        height=400,  # 高さを小さく
-        width=450,  # 幅を小さく
+        height=304,  # 380 * 0.8
+        width=440,   # 550 * 0.8
         margin=dict(
-            t=30,  # 上の余白
-            b=80,  # 下の余白（凡例のスペース）
-            l=10,  # 左の余白
-            r=10,  # 右の余白
+            t=30,
+            b=30,
+            l=200,  # 左の余白を増やして凡例のスペースを確保
+            r=10,
             pad=4
         ),
-        autosize=False  # 自動サイズ調整を無効化
+        autosize=False
     )
     
     return fig
@@ -231,7 +255,6 @@ def create_subcategory_bar(df, selected_year=None, selected_categories=None):
     ])
     
     # タイトルの設定
-    title = 'サブカテゴリー分布'
     if selected_year:
         title += f' ({selected_year}年)'
     if selected_categories and len(selected_categories) <= 3:
@@ -243,28 +266,28 @@ def create_subcategory_bar(df, selected_year=None, selected_categories=None):
     bar_height = min(max(25 * len(subcategory_counts), 300), 500)  # 最小300px、最大500px
     
     fig.update_layout(
-        title='あああ',
+        title='サブカテゴリ分布',
         title_font=dict(size=14),
         xaxis_title='件数',
         yaxis=dict(
-            title='サブカテゴリー',
-            tickfont=dict(size=10),  # Y軸のフォントサイズを小さく
+            title='',  # y軸のタイトルを削除
+            tickfont=dict(size=10),
             automargin=True
         ),
-        height=bar_height,  # 動的に高さを調整
-        width=450,  # 幅を指定
+        height=bar_height,
+        width=450,
         margin=dict(
-            t=30,  # 上の余白
-            b=50,  # 下の余白
-            l=180,  # 左の余白（サブカテゴリー名のスペース）
-            r=10,  # 右の余白
+            t=30,
+            b=50,
+            l=180,
+            r=10,
             pad=4
         ),
         showlegend=False,
-        yaxis_categoryorder='total ascending',  # カテゴリーを値の小さい順に並べる
-        bargap=0.1,  # バー間のギャップを小さく
-        uniformtext=dict(minsize=8, mode='hide'),  # テキストの最小サイズ
-        autosize=False  # 自動サイズ調整を無効化
+        yaxis_categoryorder='total ascending',
+        bargap=0.1,
+        uniformtext=dict(minsize=8, mode='hide'),
+        autosize=False
     )
     
     # バーチャートのテキストスタイルを調整
@@ -358,7 +381,7 @@ def create_trend_line(df, selected_categories=None):
     
     # レイアウトを設定
     fig.update_layout(
-        title='あああ',
+        title='カテゴリ別年推移',
         title_font=dict(size=14),
         xaxis=dict(
             tickmode='array',
@@ -372,14 +395,14 @@ def create_trend_line(df, selected_categories=None):
         yaxis_title='構成比 (%)',
         height=350,  # 高さを小さく
         width=600,  # 幅を指定
-        margin=dict(t=30, b=50, l=50, r=50),
+        margin=dict(t=30, b=80, l=50, r=150),  # 下マージンを増やして補足文のスペースを確保
         showlegend=True,
         legend=dict(
-            orientation='h',
-            yanchor='bottom',
-            y=-0.3,
-            xanchor='center',
-            x=0.5,
+            orientation='v',  # 垂直方向に変更
+            yanchor='middle',  # 中央揃え
+            y=0.5,
+            xanchor='right',  # 右端に配置
+            x=1.1,  # グラフの右端から少し離す
             font=dict(size=9)
         ),
         hovermode='closest'
@@ -387,7 +410,7 @@ def create_trend_line(df, selected_categories=None):
     
     # サブタイトルを作成
     subtitle = f"""
-        <div style='text-align: center; color: #666666; font-size: 8px; margin-top: 10px;'>
+        <div style='text-align: center; color: #666666; font-size: 8px; margin-top: -30px;'>
             ※ 選定基準：全体割合の変化の大きさ（40%の重み）と全体に占めるシェアの大きさ（30%の重み）の合計スコアで上位10カテゴリーを表示<br>
         </div>
     """
@@ -395,7 +418,7 @@ def create_trend_line(df, selected_categories=None):
     return fig, subtitle
 
 def calculate_yoy_changes(df):
-    """カテゴリーごとの前年比変化率を計算"""
+    """カテゴリーごとの前年比変化を計算（構成比とデータ数の両方を考慮）"""
     # 年ごとのカテゴリー別集計
     yearly_counts = df.groupby(['year', 'category_ja'])['count'].sum().reset_index()
     
@@ -406,12 +429,12 @@ def calculate_yoy_changes(df):
     # 構成比を計算
     yearly_counts['share'] = (yearly_counts['count'] / yearly_counts['count_total'] * 100).round(2)
     
-    # 最新年を取得
+    # 最新年と前年のデータを抽出
     latest_year = yearly_counts['year'].max()
     previous_year = latest_year - 1
-# 最新年と前年のデータを抽出
-    latest_data = yearly_counts[yearly_counts['year'] == latest_year][['category_ja', 'share']]
-    previous_data = yearly_counts[yearly_counts['year'] == previous_year][['category_ja', 'share']]
+    
+    latest_data = yearly_counts[yearly_counts['year'] == latest_year][['category_ja', 'count', 'share']]
+    previous_data = yearly_counts[yearly_counts['year'] == previous_year][['category_ja', 'count', 'share']]
     
     # 前年比の変化を計算
     changes = latest_data.merge(
@@ -421,67 +444,153 @@ def calculate_yoy_changes(df):
         how='left'
     )
     
-    # 変化ポイントを計算
-    changes['change_points'] = (changes['share_current'] - changes['share_prev']).round(1)
+    # 構成比の変化を計算
+    changes['share_change'] = (changes['share_current'] - changes['share_prev']).round(1)
     
-    # 上位10件と下位10件を抽出
-    top_gainers = changes.nlargest(10, 'change_points')[['category_ja', 'change_points']]
-    top_losers = changes.nsmallest(10, 'change_points')[['category_ja', 'change_points']]
+    # データ数の変化率を計算
+    changes['count_change_rate'] = ((changes['count_current'] - changes['count_prev']) / changes['count_prev'] * 100).round(1)
+    
+    # 総合スコアの計算
+    # 1. 構成比の変化（絶対値）を正規化
+    max_share_change = changes['share_change'].abs().max()
+    changes['share_score'] = changes['share_change'].abs() / max_share_change
+    
+    # 2. データ数の変化率（絶対値）を正規化
+    max_count_change = changes['count_change_rate'].abs().max()
+    changes['count_score'] = changes['count_change_rate'].abs() / max_count_change
+    
+    # 3. 総合スコアの計算（構成比の変化を60%、データ数の変化を40%の重みで）
+    changes['final_score'] = (changes['share_score'] * 0.6 + changes['count_score'] * 0.4).round(3)
+    
+    # 上位10件と下位10件を抽出（構成比の変化の大きさでソート）
+    top_gainers = changes.nlargest(10, 'share_change')[['category_ja', 'share_change', 'count_change_rate', 'final_score']]
+    top_losers = changes.nsmallest(10, 'share_change')[['category_ja', 'share_change', 'count_change_rate', 'final_score']]
     
     return top_gainers, top_losers
 
 def display_yoy_changes(df, top_gainers, top_losers):
     """構成比の変化を表示"""
-    # ランキング表示用に2カラムに分割
-    col1, col2 = st.columns(2)
+    # ランキング表示用に3カラムに分割
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         st.markdown("""
-            <div style='font-size: 14px; color: #333333; font-weight: bold; margin-bottom: 5px;'>注目度上昇</div>
-            <div style='font-size: 12px; color: #666666; font-weight: normal; margin-bottom: 10px; border-bottom: 2px solid #22C55E; padding-bottom: 6px;'>前年からの構成比変化（%ポイント）</div>
+            <div style='font-size: 14px; color: #333333; font-weight: bold; margin-bottom: 5px;'>注目度変化</div>
+            <div style='font-size: 12px; color: #666666; font-weight: normal; margin-bottom: 10px; border-bottom: 2px solid #666666; padding-bottom: 6px;'>
+                前年からの変化（構成比: %ポイント, データ数: %）
+            </div>
         """, unsafe_allow_html=True)
         
-        for i, (category, change) in enumerate(zip(top_gainers['category_ja'], top_gainers['change_points'])):
-            # トップ3の場合は薄い緑色の背景を追加
-            bg_color = '#F0FDF4' if i < 3 else 'transparent'
+        # 注目度変化の計算（絶対値でソート）
+        changes = pd.concat([
+            top_gainers.assign(type='上昇'),
+            top_losers.assign(type='減少')
+        ])
+        changes['abs_change'] = changes['share_change'].abs()
+        changes = changes.sort_values('abs_change', ascending=False).head(10)
+        
+        for i, (category, share_change, count_change, score, type_) in enumerate(zip(
+            changes['category_ja'],
+            changes['share_change'],
+            changes['count_change_rate'],
+            changes['final_score'],
+            changes['type']
+        )):
+            # 色の設定
+            color = '#22C55E' if type_ == '上昇' else '#EF4444'
+            bg_color = '#F0FDF4' if type_ == '上昇' else '#FEF2F2'
             # トップ3の場合は太字、それ以外は通常の太さ
             font_weight = 'bold' if i < 3 else 'normal'
+            
             st.markdown(f"""
-            <div style='display: flex; align-items: center; margin: 1px 0; padding: 2px; background-color: {bg_color}; border-radius: 4px;'>
-                <div style='background-color: #DCF8E7; border-radius: 50%; width: 24px; height: 24px; 
-                          display: flex; align-items: center; justify-content: center; margin-right: 8px;'>
-                    <span style='color: #22C55E; font-weight: bold; font-size: 12px;'>{i + 1}</span>
+            <div style='display: flex; align-items: center; margin: 0; padding: 1px; background-color: {bg_color}; border-radius: 4px;'>
+                <div style='background-color: {bg_color}; border-radius: 50%; width: 20px; height: 20px; 
+                          display: flex; align-items: center; justify-content: center; margin-right: 6px;'>
+                    <span style='color: {color}; font-weight: bold; font-size: 10px;'>{i + 1}</span>
                 </div>
                 <div style='flex-grow: 1; display: flex; justify-content: space-between; align-items: center;'>
-                    <div style='font-size: 14px; color: #333333;'>{category}</div>
-                    <div style='color: #22C55E; font-weight: {font_weight}; font-size: 14px;'>+{change}pt</div>
+                    <div style='font-size: 12px; color: #333333;'>{category}</div>
+                    <div style='display: flex; align-items: center; gap: 4px;'>
+                        <div style='color: {color}; font-weight: {font_weight}; font-size: 12px;'>{share_change:+}pt</div>
+                        <div style='color: {color}; font-size: 10px;'>({count_change:+}%)</div>
+                    </div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
     
     with col2:
         st.markdown("""
-            <div style='font-size: 14px; color: #333333; font-weight: bold; margin-bottom: 5px;'>注目度減少</div>
-            <div style='font-size: 12px; color: #666666; font-weight: normal; margin-bottom: 10px; border-bottom: 2px solid #EF4444; padding-bottom: 6px;'>前年からの構成比変化（%ポイント）</div>
+            <div style='font-size: 14px; color: #333333; font-weight: bold; margin-bottom: 5px;'>注目度上昇</div>
+            <div style='font-size: 12px; color: #666666; font-weight: normal; margin-bottom: 10px; border-bottom: 2px solid #22C55E; padding-bottom: 6px;'>
+                前年からの変化（構成比: %ポイント, データ数: %）
+            </div>
         """, unsafe_allow_html=True)
         
-        for i, (category, change) in enumerate(zip(top_losers['category_ja'], top_losers['change_points'])):
+        for i, (category, share_change, count_change, score) in enumerate(zip(
+            top_gainers['category_ja'], 
+            top_gainers['share_change'], 
+            top_gainers['count_change_rate'],
+            top_gainers['final_score']
+        )):
+            # トップ3の場合は薄い緑色の背景を追加
+            bg_color = '#F0FDF4' if i < 3 else 'transparent'
+            # トップ3の場合は太字、それ以外は通常の太さ
+            font_weight = 'bold' if i < 3 else 'normal'
+            st.markdown(f"""
+            <div style='display: flex; align-items: center; margin: 0; padding: 1px; background-color: {bg_color}; border-radius: 4px;'>
+                <div style='background-color: #DCF8E7; border-radius: 50%; width: 20px; height: 20px; 
+                          display: flex; align-items: center; justify-content: center; margin-right: 6px;'>
+                    <span style='color: #22C55E; font-weight: bold; font-size: 10px;'>{i + 1}</span>
+                </div>
+                <div style='flex-grow: 1; display: flex; justify-content: space-between; align-items: center;'>
+                    <div style='font-size: 12px; color: #333333;'>{category}</div>
+                    <div style='display: flex; align-items: center; gap: 4px;'>
+                        <div style='color: #22C55E; font-weight: {font_weight}; font-size: 12px;'>+{share_change}pt</div>
+                        <div style='color: #22C55E; font-size: 10px;'>(+{count_change}%)</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown("""
+            <div style='font-size: 14px; color: #333333; font-weight: bold; margin-bottom: 5px;'>注目度減少</div>
+            <div style='font-size: 12px; color: #666666; font-weight: normal; margin-bottom: 10px; border-bottom: 2px solid #EF4444; padding-bottom: 6px;'>
+                前年からの変化（構成比: %ポイント, データ数: %）
+            </div>
+        """, unsafe_allow_html=True)
+        
+        for i, (category, share_change, count_change, score) in enumerate(zip(
+            top_losers['category_ja'], 
+            top_losers['share_change'], 
+            top_losers['count_change_rate'],
+            top_losers['final_score']
+        )):
             # トップ3の場合は薄い赤色の背景を追加
             bg_color = '#FEF2F2' if i < 3 else 'transparent'
             # トップ3の場合は太字、それ以外は通常の太さ
             font_weight = 'bold' if i < 3 else 'normal'
             st.markdown(f"""
-            <div style='display: flex; align-items: center; margin: 1px 0; padding: 2px; background-color: {bg_color}; border-radius: 4px;'>
-                <div style='background-color: #FEE2E2; border-radius: 50%; width: 24px; height: 24px; 
-                          display: flex; align-items: center; justify-content: center; margin-right: 8px;'>
-                    <span style='color: #EF4444; font-weight: bold; font-size: 12px;'>{i + 1}</span>
+            <div style='display: flex; align-items: center; margin: 0; padding: 1px; background-color: {bg_color}; border-radius: 4px;'>
+                <div style='background-color: #FEE2E2; border-radius: 50%; width: 20px; height: 20px; 
+                          display: flex; align-items: center; justify-content: center; margin-right: 6px;'>
+                    <span style='color: #EF4444; font-weight: bold; font-size: 10px;'>{i + 1}</span>
                 </div>
                 <div style='flex-grow: 1; display: flex; justify-content: space-between; align-items: center;'>
-                    <div style='font-size: 14px; color: #333333;'>{category}</div>
-                    <div style='color: #EF4444; font-weight: {font_weight}; font-size: 14px;'>{change}pt</div>
+                    <div style='font-size: 12px; color: #333333;'>{category}</div>
+                    <div style='display: flex; align-items: center; gap: 4px;'>
+                        <div style='color: #EF4444; font-weight: {font_weight}; font-size: 12px;'>{share_change}pt</div>
+                        <div style='color: #EF4444; font-size: 10px;'>({count_change}%)</div>
+                    </div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
+    
+    # ランキングの説明文を表示
+    st.markdown("""
+        <div style='text-align: center; color: #666666; font-size: 12px; margin: 10px 0;'>
+        </div>
+    """, unsafe_allow_html=True)
     
     # 区切り線を追加
     st.markdown("""
@@ -494,6 +603,8 @@ def display_yoy_changes(df, top_gainers, top_losers):
         'displayModeBar': False,
         'responsive': True
     })
+    
+    # トレンドグラフの説明文を表示
     st.markdown(subtitle, unsafe_allow_html=True)
     
     # 区切り線を追加
@@ -517,7 +628,7 @@ def display_ai_button():
         border: none;
         width: 100%;
         margin-top: 10px;
-    }
+    }G
     div.stButton > button:hover {
         background-color: #4338CA;
     }
@@ -561,7 +672,7 @@ def main():
                 line-height: 1.7;
                 letter-spacing: 0.3px;
             '>
-                SAE WCXにおける技術発表論文の分析に基づく自動車業界の技術動向分析・重点領域の可視化
+                SAE WCXにおける技術発表論文に基づく自動車業界の技術動向分析・重点領域の可視化
             </div>
             <hr style='margin: 0 0 30px 0; border: none; height: 1px; background-color: #E2E8F0;'>
         """, unsafe_allow_html=True)
@@ -591,11 +702,6 @@ def main():
     # 前年比の変化率を計算と表示
     top_gainers, top_losers = calculate_yoy_changes(df)
     display_yoy_changes(df, top_gainers, top_losers)
-    
-    # 区切り線を追加
-    st.markdown("""
-        <hr style='margin: 20px 0; border: none; height: 1px; background-color: #E2E8F0;'>
-    """, unsafe_allow_html=True)
     
     # フィルター
     col1, col2 = st.columns(2)
@@ -639,8 +745,6 @@ def display_data_visualizations(df, year_filter, category_filter):
     
     with col1:
         st.markdown("""
-            <div style='font-size: 14px; color: #333333; font-weight: bold; margin-bottom: 5px;'>カテゴリ分布</div>
-            <div style='font-size: 12px; color: #666666; font-weight: normal; margin-bottom: 10px;'>全体に占める各カテゴリの割合</div>
         """, unsafe_allow_html=True)
         
         # 表示用フィルター情報
@@ -667,10 +771,6 @@ def display_data_visualizations(df, year_filter, category_filter):
         )
     
     with col2:
-        st.markdown("""
-            <div style='font-size: 14px; color: #333333; font-weight: bold; margin-bottom: 5px;'>サブカテゴリ分布</div>
-            <div style='font-size: 12px; color: #666666; font-weight: normal; margin-bottom: 10px;'>各サブカテゴリの件数</div>
-        """, unsafe_allow_html=True)
         
         # 表示用フィルター情報（同じ内容を表示）
         if filter_info:
