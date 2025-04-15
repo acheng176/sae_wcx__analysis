@@ -241,6 +241,15 @@ def create_subcategory_bar(df, selected_year=None, selected_categories=None):
     if len(subcategory_counts) > max_items:
         subcategory_counts = subcategory_counts.tail(max_items)  # 上位15項目のみ表示
     
+    # タイトルの設定
+    title = 'サブカテゴリ分布'
+    if selected_year:
+        title += f' ({selected_year}年)'
+    if selected_categories and len(selected_categories) <= 3:
+        title += f' - {", ".join(selected_categories)}'
+    elif selected_categories:
+        title += f' - {len(selected_categories)}カテゴリ選択中'
+    
     # 棒グラフの作成
     fig = go.Figure(data=[
         go.Bar(
@@ -254,19 +263,11 @@ def create_subcategory_bar(df, selected_year=None, selected_categories=None):
         )
     ])
     
-    # タイトルの設定
-    if selected_year:
-        title += f' ({selected_year}年)'
-    if selected_categories and len(selected_categories) <= 3:
-        title += f' - {", ".join(selected_categories)}'
-    elif selected_categories and len(selected_categories) > 3:
-        title += f' - {len(selected_categories)}カテゴリ選択中'
-    
     # 表示するサブカテゴリー数に応じて高さを動的に調整
     bar_height = min(max(25 * len(subcategory_counts), 300), 500)  # 最小300px、最大500px
     
     fig.update_layout(
-        title='サブカテゴリ分布',
+        title=title,
         title_font=dict(size=14),
         xaxis_title='件数',
         yaxis=dict(
@@ -771,11 +772,6 @@ def display_data_visualizations(df, year_filter, category_filter):
         )
     
     with col2:
-        
-        # 表示用フィルター情報（同じ内容を表示）
-        if filter_info:
-            st.markdown(f"<div style='text-align: center; color: #666666; font-size: 12px; margin-bottom: 10px;'>{filter_info}</div>", unsafe_allow_html=True)
-        
         # サブカテゴリ分布の棒グラフを表示
         sub_fig = create_subcategory_bar(df, year_filter, category_filter)
         st.plotly_chart(
