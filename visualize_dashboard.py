@@ -49,7 +49,7 @@ COLOR_MAPPING = {
 # カテゴリの日本語マッピング
 CATEGORY_MAPPING = {
     'Internal Combustion Engine': '内燃機関技術',
-    'ADAS/AVS': '自動運転・ADAS',
+    'ADAS/AVS': 'ADAS/AVS',
     'Electrification': '電動化技術',
     'Emissions Control': '排出ガス制御',
     'Vehicle Development': '車両開発',
@@ -647,6 +647,139 @@ def display_ai_button():
             st.info("AIによる分析レポートを使用するには、Azure OpenAI APIの設定が必要です。.envファイルにAPIキーとエンドポイントを設定してください。")
             return False
 
+def load_raw_data(limit=100, offset=0):
+    """生データを読み込む"""
+    db = DatabaseHandler()
+    with sqlite3.connect(db.db_path) as conn:
+        query = """
+        SELECT 
+            no,
+            year,
+            category,
+            subcategory,
+            session_name,
+            session_code,
+            overview,
+            paper_no,
+            title,
+            main_author_group,
+            main_author_affiliation,
+            co_author_group,
+            co_author_affiliation,
+            organizers,
+            chairperson
+        FROM sessions
+        ORDER BY year DESC, category, subcategory
+        LIMIT ? OFFSET ?
+        """
+        df = pd.read_sql_query(query, conn, params=(limit, offset))
+        
+        # カテゴリとサブカテゴリを日本語に変換
+        df['category_ja'] = df['category'].apply(translate_category)
+        df['subcategory_ja'] = df['subcategory'].apply(translate_subcategory)
+        
+        # 著者情報を結合（空の場合は空文字列を返す）
+        df['著者'] = df.apply(lambda x: 
+            f"{x['main_author_group']} ({x['main_author_affiliation']})" if x['main_author_group'] else "" +
+            (f", {x['co_author_group']} ({x['co_author_affiliation']})" if x['co_author_group'] else ""), 
+            axis=1
+        )
+        
+        # 不要な列を削除
+        df = df.drop(['category', 'subcategory', 'main_author_group', 'main_author_affiliation', 
+                     'co_author_group', 'co_author_affiliation'], axis=1)
+        
+        # 列の順序を変更
+        df = df[['no', 'year', 'category_ja', 'subcategory_ja', 'session_name', 'session_code', 
+                'paper_no', 'title', '著者', 'overview', 'organizers', 'chairperson']]
+        
+        # 列名を日本語に変更
+        df.columns = ['No', '年', 'カテゴリ', 'サブカテゴリ', 'セッション名', 'セッションコード', 
+                     '論文番号', 'タイトル', '著者', '概要', 'オーガナイザー', 'チェアパーソン']
+        
+    return df
+
+def display_raw_data():
+    """生データを表示"""
+    st.markdown("""
+        <div style='margin-top: 30px;'>
+            <h3 style='color: #333333; font-size: 18px; margin-bottom: 15px;'>生データ一覧</h3>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # セッション状態の初期化
+    if 'data_offset' not in st.session_state:
+        st.session_state.data_offset = 0
+    
+    # データの読み込み
+    df = load_raw_data(limit=100, offset=st.session_state.data_offset)
+    
+    # データフレームの表示
+    st.dataframe(
+        df,
+        use_container_width=True,
+        height=400,
+        hide_index=True,  # インデックスを非表示
+        column_config={
+            "No": st.column_config.NumberColumn(
+                "No",
+                format="%d",
+                width=50  # 幅を50pxに設定
+            ),
+            "年": st.column_config.NumberColumn(
+                "年",
+                format="%d",
+                width=50  # 幅を50pxに設定
+            ),
+            "カテゴリ": st.column_config.TextColumn(
+                "カテゴリ",
+                width=100
+            ),
+            "サブカテゴリ": st.column_config.TextColumn(
+                "サブカテゴリ",
+                width=100
+            ),
+            "セッション名": st.column_config.TextColumn(
+                "セッション名",
+                width=150
+            ),
+            "セッションコード": st.column_config.TextColumn(
+                "セッションコード",
+                width=80
+            ),
+            "論文番号": st.column_config.TextColumn(
+                "論文番号",
+                width=80
+            ),
+            "タイトル": st.column_config.TextColumn(
+                "タイトル",
+                width=200
+            ),
+            "著者": st.column_config.TextColumn(
+                "著者",
+                width=150
+            ),
+            "概要": st.column_config.TextColumn(
+                "概要",
+                width=300
+            ),
+            "オーガナイザー": st.column_config.TextColumn(
+                "オーガナイザー",
+                width=150
+            ),
+            "チェアパーソン": st.column_config.TextColumn(
+                "チェアパーソン",
+                width=150
+            )
+        }
+    )
+    
+    # さらに読み込むボタン
+    if len(df) == 100:  # 100件表示されている場合のみボタンを表示
+        if st.button('さらに読み込む', use_container_width=True):
+            st.session_state.data_offset += 100
+            st.rerun()
+
 def main():
     st.set_page_config(
         page_title=" SAE WCX 技術トレンド分析",
@@ -732,6 +865,9 @@ def main():
     st.markdown("""
         <hr style='margin-top: 30px; margin-bottom: 30px; border: none; height: 1px; background-color: #E2E8F0;'>
     """, unsafe_allow_html=True)
+    
+    # 生データの表示
+    display_raw_data()
     
     # フッター
     st.markdown("""
