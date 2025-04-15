@@ -471,6 +471,32 @@ def calculate_yoy_changes(df):
 
 def display_yoy_changes(df, top_gainers, top_losers):
     """構成比の変化を表示"""
+    # タイトル
+    st.markdown("""
+        <div style='margin-top: 30px;'>
+            <h3 style='color: #333333; font-size: 18px; margin-bottom: 15px;'>注目度の変化</h3>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # カードの追加
+    st.markdown("""
+        <div style='
+            background-color: #F8FAFC;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            border: 1px solid #E2E8F0;
+        '>
+            <div style='color: #333333; font-size: 14px; font-weight: bold; margin-bottom: 8px;'>
+                注目度の変化について
+            </div>
+            <div style='color: #666666; font-size: 12px; line-height: 1.5;'>
+                このセクションでは、前年からのカテゴリ別の注目度の変化を分析しています。<br>
+                注目度は、構成比の変化（60%）とデータ数の変化率（40%）を組み合わせて算出しています。
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+    
     # ランキング表示用に3カラムに分割
     col1, col2, col3 = st.columns(3)
     
@@ -653,7 +679,6 @@ def load_raw_data(limit=100, offset=0):
     with sqlite3.connect(db.db_path) as conn:
         query = """
         SELECT 
-            no,
             year,
             category,
             subcategory,
@@ -685,12 +710,15 @@ def load_raw_data(limit=100, offset=0):
             axis=1
         )
         
+        # No列を追加（オフセットを考慮）
+        df['No'] = range(offset + 1, offset + len(df) + 1)
+        
         # 不要な列を削除
         df = df.drop(['category', 'subcategory', 'main_author_group', 'main_author_affiliation', 
                      'co_author_group', 'co_author_affiliation'], axis=1)
         
         # 列の順序を変更
-        df = df[['no', 'year', 'category_ja', 'subcategory_ja', 'session_name', 'session_code', 
+        df = df[['No', 'year', 'category_ja', 'subcategory_ja', 'session_name', 'session_code', 
                 'paper_no', 'title', '著者', 'overview', 'organizers', 'chairperson']]
         
         # 列名を日本語に変更
@@ -710,13 +738,18 @@ def display_raw_data():
     # セッション状態の初期化
     if 'data_offset' not in st.session_state:
         st.session_state.data_offset = 0
+    if 'displayed_data' not in st.session_state:
+        st.session_state.displayed_data = pd.DataFrame()
     
-    # データの読み込み
-    df = load_raw_data(limit=100, offset=st.session_state.data_offset)
+    # 新しいデータの読み込み
+    new_data = load_raw_data(limit=100, offset=st.session_state.data_offset)
+    
+    # 既存のデータと新しいデータを結合
+    st.session_state.displayed_data = pd.concat([st.session_state.displayed_data, new_data], ignore_index=True)
     
     # データフレームの表示
     st.dataframe(
-        df,
+        st.session_state.displayed_data,
         use_container_width=True,
         height=400,
         hide_index=True,  # インデックスを非表示
@@ -775,7 +808,7 @@ def display_raw_data():
     )
     
     # さらに読み込むボタン
-    if len(df) == 100:  # 100件表示されている場合のみボタンを表示
+    if len(new_data) == 100:  # 新しいデータが100件ある場合のみボタンを表示
         if st.button('さらに読み込む', use_container_width=True):
             st.session_state.data_offset += 100
             st.rerun()
