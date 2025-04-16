@@ -144,7 +144,7 @@ def chunk_text(text, max_chunk_size=6000):
                         best_pos = pos
                 except Exception as e:
                     print(f"Warning: マーカー '{marker}' の検索中にエラー: {e}")
-                continue
+                    continue
                 
             if best_pos > 0:
                 chunk_end = best_pos
@@ -161,7 +161,7 @@ def chunk_text(text, max_chunk_size=6000):
             print(f"Progress: チャンク {len(chunks)} 作成完了 ({chunk_end}/{len(text)} 文字処理済み)")
         
         return chunks
-        except Exception as e:
+    except Exception as e:
         print(f"Error: テキスト分割中にエラー発生: {e}")
         return [text]  # エラー時は元のテキストを1つのチャンクとして返す
 
@@ -390,7 +390,7 @@ def extract_structured_data(text, debug_mode=False, debug_chunk_count=5):
                 
             except Exception as chunk_error:
                 print(f"Error: チャンク {i} の処理中にエラーが発生: {str(chunk_error)}")
-            continue
+                continue
         
         print(f"\n処理完了: 合計 {len(all_results)} 件のレコードを抽出")
         print(f"抽出されたユニークなセッション数: {len({r['session_code'] for r in all_results})}")
@@ -492,8 +492,8 @@ def main():
     try:
         # テキストファイルから入力を読み込む
         input_file = "input.txt"
-            with open(input_file, 'r', encoding='utf-8') as f:
-                input_text = f.read()
+        with open(input_file, 'r', encoding='utf-8') as f:
+            input_text = f.read()
         
         # 年を抽出して表示
         year = extract_year_from_text(input_text)

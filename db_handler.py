@@ -23,6 +23,65 @@ class DatabaseHandler:
             print(f"データベースファイルの保存先: {self.db_path}")
             
         self.create_tables()
+        
+        # カテゴリとサブカテゴリの翻訳マップ
+        self.category_translation = {
+            'Vehicle Dynamics': '車両ダイナミクス',
+            'Vehicle Design': '車両設計',
+            'Vehicle Safety': '車両安全',
+            'Vehicle Performance': '車両性能',
+            'Vehicle Testing': '車両試験',
+            'Vehicle Manufacturing': '車両製造',
+            'Vehicle Electronics': '車両電子制御',
+            'Vehicle Materials': '車両材料',
+            'Vehicle Powertrain': '車両パワートレイン',
+            'Vehicle Emissions': '車両排出ガス',
+            'Vehicle Noise': '車両騒音',
+            'Vehicle Vibration': '車両振動',
+            'Vehicle Aerodynamics': '車両空力',
+            'Vehicle Thermal Management': '車両熱管理',
+            'Vehicle Energy Management': '車両エネルギー管理',
+            'Vehicle Connectivity': '車両コネクティビティ',
+            'Vehicle Automation': '車両自動化',
+            'Vehicle Electrification': '車両電動化',
+            'Vehicle Sustainability': '車両持続可能性',
+            'Vehicle Cybersecurity': '車両サイバーセキュリティ',
+            'Vehicle Human Factors': '車両人間工学',
+            'Vehicle Regulations': '車両規制',
+            'Vehicle Standards': '車両標準',
+            'Vehicle Education': '車両教育',
+            'Vehicle History': '車両歴史',
+            'Vehicle Future': '車両未来',
+            'Vehicle Other': 'その他'
+        }
+        
+        self.subcategory_translation = {
+            'Aerodynamics': '空力',
+            'Braking': 'ブレーキ',
+            'Chassis': 'シャシー',
+            'Control Systems': '制御システム',
+            'Crashworthiness': '衝突安全性',
+            'Dynamics': 'ダイナミクス',
+            'Electronics': '電子制御',
+            'Emissions': '排出ガス',
+            'Energy': 'エネルギー',
+            'Engine': 'エンジン',
+            'Fuel': '燃料',
+            'Human Factors': '人間工学',
+            'Materials': '材料',
+            'Noise': '騒音',
+            'Performance': '性能',
+            'Powertrain': 'パワートレイン',
+            'Safety': '安全',
+            'Simulation': 'シミュレーション',
+            'Testing': '試験',
+            'Thermal': '熱',
+            'Tires': 'タイヤ',
+            'Transmission': 'トランスミッション',
+            'Vehicle Design': '車両設計',
+            'Vibration': '振動',
+            'Other': 'その他'
+        }
 
     def create_tables(self):
         """必要なテーブルを作成"""
@@ -155,6 +214,14 @@ class DatabaseHandler:
         except Exception as e:
             print(f"Error: データの削除中にエラーが発生: {str(e)}")
             return False
+
+    def translate_category(self, category):
+        """カテゴリを日本語に翻訳"""
+        return self.category_translation.get(category, category)
+    
+    def translate_subcategory(self, subcategory):
+        """サブカテゴリを日本語に翻訳"""
+        return self.subcategory_translation.get(subcategory, subcategory)
 
 def validate_db_input(data, year):
     """データベース入力の妥当性を検証する

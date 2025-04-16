@@ -8,6 +8,7 @@ import numpy as np
 from datetime import datetime
 import os
 from dotenv import load_dotenv
+from trend_analyzer import TrendAnalyzer
 
 # openai_insightsモジュールをインポート
 try:
@@ -471,28 +472,55 @@ def calculate_yoy_changes(df):
 
 def display_yoy_changes(df, top_gainers, top_losers):
     """構成比の変化を表示"""
-    # タイトル
-    st.markdown("""
-        <div style='margin-top: 30px;'>
-            <h3 style='color: #333333; font-size: 18px; margin-bottom: 15px;'>注目度の変化</h3>
-        </div>
-    """, unsafe_allow_html=True)
+    
+    # トレンド分析の実行
+    analyzer = TrendAnalyzer()
+    trend_analysis = analyzer.get_trend_analysis()
     
     # カードの追加
-    st.markdown("""
+    st.markdown(f"""
         <div style='
             background-color: #F8FAFC;
             border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 20px;
+            padding: 12px;
+            margin-bottom: 15px;
             border: 1px solid #E2E8F0;
         '>
-            <div style='color: #333333; font-size: 14px; font-weight: bold; margin-bottom: 8px;'>
-                注目度の変化について
+            <div style='color: #333333; font-size: 14px; font-weight: bold; margin-bottom: 6px;'>
+                AIによる技術トレンド分析
             </div>
-            <div style='color: #666666; font-size: 12px; line-height: 1.5;'>
-                このセクションでは、前年からのカテゴリ別の注目度の変化を分析しています。<br>
-                注目度は、構成比の変化（60%）とデータ数の変化率（40%）を組み合わせて算出しています。
+            <style>
+                .trend-analysis h1 {{ 
+                    display: none !important;
+                }}
+                .trend-analysis h2 {{ 
+                    font-size: 11px !important; 
+                    margin-top: 12px !important; 
+                    margin-bottom: 4px !important; 
+                    color: #333333 !important;
+                    font-weight: normal !important;
+                }}
+                .trend-analysis h3 {{ 
+                    display: none !important;
+                }}
+                .trend-analysis ul {{ 
+                    margin-top: 2px !important; 
+                    margin-bottom: 4px !important;
+                    padding-left: 20px !important;
+                }}
+                .trend-analysis li {{ 
+                    margin-bottom: 2px !important;
+                    font-size: 13px !important;
+                    line-height: 1.6 !important;
+                }}
+                .trend-analysis p {{
+                    font-size: 13px !important;
+                    line-height: 1.6 !important;
+                    margin-bottom: 8px !important;
+                }}
+            </style>
+            <div class='trend-analysis' style='color: #1F2937; font-size: 13px; line-height: 1.6;'>
+                {trend_analysis}
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -523,23 +551,28 @@ def display_yoy_changes(df, top_gainers, top_losers):
             changes['final_score'],
             changes['type']
         )):
-            # 色の設定
-            color = '#22C55E' if type_ == '上昇' else '#EF4444'
-            bg_color = '#F0FDF4' if type_ == '上昇' else '#FEF2F2'
+            # 色とスタイルの設定
+            share_color = '#22C55E' if share_change > 0 else '#EF4444'
+            count_color = '#22C55E' if count_change > 0 else '#EF4444'
+            bg_color = '#F0FDF4' if share_change > 0 else '#FEF2F2'
+            circle_bg = '#DCF8E7' if share_change > 0 else '#FEE2E2'
             # トップ3の場合は太字、それ以外は通常の太さ
             font_weight = 'bold' if i < 3 else 'normal'
+            # 符号の設定
+            share_sign = '+' if share_change > 0 else ''
+            count_sign = '+' if count_change > 0 else ''
             
             st.markdown(f"""
             <div style='display: flex; align-items: center; margin: 0; padding: 1px; background-color: {bg_color}; border-radius: 4px;'>
-                <div style='background-color: {bg_color}; border-radius: 50%; width: 20px; height: 20px; 
+                <div style='background-color: {circle_bg}; border-radius: 50%; width: 20px; height: 20px; 
                           display: flex; align-items: center; justify-content: center; margin-right: 6px;'>
-                    <span style='color: {color}; font-weight: bold; font-size: 10px;'>{i + 1}</span>
+                    <span style='color: {share_color}; font-weight: bold; font-size: 10px;'>{i + 1}</span>
                 </div>
                 <div style='flex-grow: 1; display: flex; justify-content: space-between; align-items: center;'>
                     <div style='font-size: 12px; color: #333333;'>{category}</div>
                     <div style='display: flex; align-items: center; gap: 4px;'>
-                        <div style='color: {color}; font-weight: {font_weight}; font-size: 12px;'>{share_change:+}pt</div>
-                        <div style='color: {color}; font-size: 10px;'>({count_change:+}%)</div>
+                        <div style='color: {share_color}; font-weight: {font_weight}; font-size: 12px;'>{share_sign}{share_change}pt</div>
+                        <div style='color: {count_color}; font-size: 10px;'>({count_sign}{count_change}%)</div>
                     </div>
                 </div>
             </div>
@@ -553,31 +586,45 @@ def display_yoy_changes(df, top_gainers, top_losers):
             </div>
         """, unsafe_allow_html=True)
         
-        for i, (category, share_change, count_change, score) in enumerate(zip(
-            top_gainers['category_ja'], 
-            top_gainers['share_change'], 
-            top_gainers['count_change_rate'],
-            top_gainers['final_score']
-        )):
-            # トップ3の場合は薄い緑色の背景を追加
-            bg_color = '#F0FDF4' if i < 3 else 'transparent'
-            # トップ3の場合は太字、それ以外は通常の太さ
-            font_weight = 'bold' if i < 3 else 'normal'
-            st.markdown(f"""
-            <div style='display: flex; align-items: center; margin: 0; padding: 1px; background-color: {bg_color}; border-radius: 4px;'>
-                <div style='background-color: #DCF8E7; border-radius: 50%; width: 20px; height: 20px; 
-                          display: flex; align-items: center; justify-content: center; margin-right: 6px;'>
-                    <span style='color: #22C55E; font-weight: bold; font-size: 10px;'>{i + 1}</span>
-                </div>
-                <div style='flex-grow: 1; display: flex; justify-content: space-between; align-items: center;'>
-                    <div style='font-size: 12px; color: #333333;'>{category}</div>
-                    <div style='display: flex; align-items: center; gap: 4px;'>
-                        <div style='color: #22C55E; font-weight: {font_weight}; font-size: 12px;'>+{share_change}pt</div>
-                        <div style='color: #22C55E; font-size: 10px;'>(+{count_change}%)</div>
+        # プラスの変化のみをフィルタリング
+        positive_changes = top_gainers[top_gainers['share_change'] > 0].copy()
+        
+        for i in range(10):  # 10位まで表示
+            if i < len(positive_changes):
+                category = positive_changes.iloc[i]['category_ja']
+                share_change = positive_changes.iloc[i]['share_change']
+                count_change = positive_changes.iloc[i]['count_change_rate']
+                score = positive_changes.iloc[i]['final_score']
+                
+                # 色とスタイルの設定
+                count_color = '#22C55E' if count_change > 0 else '#EF4444'
+                bg_color = '#F0FDF4' if i < 3 else 'transparent'
+                # トップ3の場合は太字、それ以外は通常の太さ
+                font_weight = 'bold' if i < 3 else 'normal'
+                # 符号の設定
+                share_sign = '+' if share_change > 0 else ''
+                count_sign = '+' if count_change > 0 else ''
+                
+                st.markdown(f"""
+                <div style='display: flex; align-items: center; margin: 0; padding: 1px; background-color: {bg_color}; border-radius: 4px;'>
+                    <div style='background-color: #DCF8E7; border-radius: 50%; width: 20px; height: 20px; 
+                              display: flex; align-items: center; justify-content: center; margin-right: 6px;'>
+                        <span style='color: #22C55E; font-weight: bold; font-size: 10px;'>{i + 1}</span>
+                    </div>
+                    <div style='flex-grow: 1; display: flex; justify-content: space-between; align-items: center;'>
+                        <div style='font-size: 12px; color: #333333;'>{category}</div>
+                        <div style='display: flex; align-items: center; gap: 4px;'>
+                            <div style='color: #22C55E; font-weight: {font_weight}; font-size: 12px;'>{share_sign}{share_change}pt</div>
+                            <div style='color: {count_color}; font-size: 10px;'>({count_sign}{count_change}%)</div>
+                        </div>
                     </div>
                 </div>
-            </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
+            else:
+                # 空の行を表示（ランク番号なし）
+                st.markdown("""
+                <div style='height: 24px;'></div>
+                """, unsafe_allow_html=True)
     
     with col3:
         st.markdown("""
@@ -587,52 +634,50 @@ def display_yoy_changes(df, top_gainers, top_losers):
             </div>
         """, unsafe_allow_html=True)
         
-        for i, (category, share_change, count_change, score) in enumerate(zip(
-            top_losers['category_ja'], 
-            top_losers['share_change'], 
-            top_losers['count_change_rate'],
-            top_losers['final_score']
-        )):
-            # トップ3の場合は薄い赤色の背景を追加
-            bg_color = '#FEF2F2' if i < 3 else 'transparent'
-            # トップ3の場合は太字、それ以外は通常の太さ
-            font_weight = 'bold' if i < 3 else 'normal'
-            st.markdown(f"""
-            <div style='display: flex; align-items: center; margin: 0; padding: 1px; background-color: {bg_color}; border-radius: 4px;'>
-                <div style='background-color: #FEE2E2; border-radius: 50%; width: 20px; height: 20px; 
-                          display: flex; align-items: center; justify-content: center; margin-right: 6px;'>
-                    <span style='color: #EF4444; font-weight: bold; font-size: 10px;'>{i + 1}</span>
-                </div>
-                <div style='flex-grow: 1; display: flex; justify-content: space-between; align-items: center;'>
-                    <div style='font-size: 12px; color: #333333;'>{category}</div>
-                    <div style='display: flex; align-items: center; gap: 4px;'>
-                        <div style='color: #EF4444; font-weight: {font_weight}; font-size: 12px;'>{share_change}pt</div>
-                        <div style='color: #EF4444; font-size: 10px;'>({count_change}%)</div>
+        # マイナスの変化のみをフィルタリング
+        negative_changes = top_losers[top_losers['share_change'] < 0].copy()
+        
+        for i in range(10):  # 10位まで表示
+            if i < len(negative_changes):
+                category = negative_changes.iloc[i]['category_ja']
+                share_change = negative_changes.iloc[i]['share_change']
+                count_change = negative_changes.iloc[i]['count_change_rate']
+                score = negative_changes.iloc[i]['final_score']
+                
+                # 色とスタイルの設定
+                count_color = '#22C55E' if count_change > 0 else '#EF4444'
+                bg_color = '#FEF2F2' if i < 3 else 'transparent'
+                # トップ3の場合は太字、それ以外は通常の太さ
+                font_weight = 'bold' if i < 3 else 'normal'
+                # 符号の設定
+                count_sign = '+' if count_change > 0 else ''
+                
+                st.markdown(f"""
+                <div style='display: flex; align-items: center; margin: 0; padding: 1px; background-color: {bg_color}; border-radius: 4px;'>
+                    <div style='background-color: #FEE2E2; border-radius: 50%; width: 20px; height: 20px; 
+                              display: flex; align-items: center; justify-content: center; margin-right: 6px;'>
+                        <span style='color: #EF4444; font-weight: bold; font-size: 10px;'>{i + 1}</span>
+                    </div>
+                    <div style='flex-grow: 1; display: flex; justify-content: space-between; align-items: center;'>
+                        <div style='font-size: 12px; color: #333333;'>{category}</div>
+                        <div style='display: flex; align-items: center; gap: 4px;'>
+                            <div style='color: #EF4444; font-weight: {font_weight}; font-size: 12px;'>{share_change}pt</div>
+                            <div style='color: {count_color}; font-size: 10px;'>({count_sign}{count_change}%)</div>
+                        </div>
                     </div>
                 </div>
-            </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
+            else:
+                # 空の行を表示（ランク番号なし）
+                st.markdown("""
+                <div style='height: 24px;'></div>
+                """, unsafe_allow_html=True)
     
     # ランキングの説明文を表示
     st.markdown("""
         <div style='text-align: center; color: #666666; font-size: 12px; margin: 10px 0;'>
         </div>
     """, unsafe_allow_html=True)
-    
-    # 区切り線を追加
-    st.markdown("""
-        <hr style='margin: 20px 0; border: none; height: 1px; background-color: #E2E8F0;'>
-    """, unsafe_allow_html=True)
-    
-    # トレンドグラフを表示（フル幅）
-    fig, subtitle = create_trend_line(df, None)
-    st.plotly_chart(fig, use_container_width=True, config={
-        'displayModeBar': False,
-        'responsive': True
-    })
-    
-    # トレンドグラフの説明文を表示
-    st.markdown(subtitle, unsafe_allow_html=True)
     
     # 区切り線を追加
     st.markdown("""
@@ -673,11 +718,12 @@ def display_ai_button():
             st.info("AIによる分析レポートを使用するには、Azure OpenAI APIの設定が必要です。.envファイルにAPIキーとエンドポイントを設定してください。")
             return False
 
-def load_raw_data(limit=100, offset=0):
+def load_raw_data(year=None):
     """生データを読み込む"""
     db = DatabaseHandler()
     with sqlite3.connect(db.db_path) as conn:
-        query = """
+        # 年フィルターに基づいてクエリを構築
+        base_query = """
         SELECT 
             year,
             category,
@@ -694,10 +740,15 @@ def load_raw_data(limit=100, offset=0):
             organizers,
             chairperson
         FROM sessions
-        ORDER BY year DESC, category, subcategory
-        LIMIT ? OFFSET ?
         """
-        df = pd.read_sql_query(query, conn, params=(limit, offset))
+        
+        if year and year != 'すべて':
+            base_query += f" WHERE year = {year}"
+        
+        base_query += " ORDER BY year DESC, category, subcategory"
+        
+        # データを取得
+        df = pd.read_sql_query(base_query, conn)
         
         # カテゴリとサブカテゴリを日本語に変換
         df['category_ja'] = df['category'].apply(translate_category)
@@ -710,8 +761,8 @@ def load_raw_data(limit=100, offset=0):
             axis=1
         )
         
-        # No列を追加（オフセットを考慮）
-        df['No'] = range(offset + 1, offset + len(df) + 1)
+        # No列を追加
+        df['No'] = range(1, len(df) + 1)
         
         # 不要な列を削除
         df = df.drop(['category', 'subcategory', 'main_author_group', 'main_author_affiliation', 
@@ -727,42 +778,37 @@ def load_raw_data(limit=100, offset=0):
         
     return df
 
-def display_raw_data():
-    """生データを表示"""
+def display_raw_data(selected_year):
+    """詳細データ"""
     st.markdown("""
         <div style='margin-top: 30px;'>
-            <h3 style='color: #333333; font-size: 18px; margin-bottom: 15px;'>生データ一覧</h3>
+            <h3 style='color: #333333; font-size: 18px; margin-bottom: 15px;'>詳細データ一覧</h3>
         </div>
     """, unsafe_allow_html=True)
     
-    # セッション状態の初期化
-    if 'data_offset' not in st.session_state:
-        st.session_state.data_offset = 0
-    if 'displayed_data' not in st.session_state:
-        st.session_state.displayed_data = pd.DataFrame()
+    # データの読み込み
+    df = load_raw_data(selected_year)
     
-    # 新しいデータの読み込み
-    new_data = load_raw_data(limit=100, offset=st.session_state.data_offset)
-    
-    # 既存のデータと新しいデータを結合
-    st.session_state.displayed_data = pd.concat([st.session_state.displayed_data, new_data], ignore_index=True)
+    # 年の文字列を作成
+    year_str = f"_{selected_year}年" if selected_year and selected_year != 'すべて' else ""
+    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # データフレームの表示
     st.dataframe(
-        st.session_state.displayed_data,
+        data=df,
         use_container_width=True,
         height=400,
-        hide_index=True,  # インデックスを非表示
+        hide_index=True,
         column_config={
             "No": st.column_config.NumberColumn(
                 "No",
                 format="%d",
-                width=50  # 幅を50pxに設定
+                width=50
             ),
             "年": st.column_config.NumberColumn(
                 "年",
                 format="%d",
-                width=50  # 幅を50pxに設定
+                width=50
             ),
             "カテゴリ": st.column_config.TextColumn(
                 "カテゴリ",
@@ -807,11 +853,65 @@ def display_raw_data():
         }
     )
     
-    # さらに読み込むボタン
-    if len(new_data) == 100:  # 新しいデータが100件ある場合のみボタンを表示
-        if st.button('さらに読み込む', use_container_width=True):
-            st.session_state.data_offset += 100
-            st.rerun()
+    # Excelダウンロードボタン
+    output_dir = "output/excel"
+    os.makedirs(output_dir, exist_ok=True)
+    output_file = f"{output_dir}/wcx_sessions{year_str}_{current_time}.xlsx"
+    
+    # Excelファイルの作成
+    with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name='WCX Sessions', index=False)
+        
+        # ワークシートを取得
+        worksheet = writer.sheets['WCX Sessions']
+        
+        # カラム幅の自動調整
+        for column in worksheet.columns:
+            max_length = 0
+            column = [cell for cell in column]
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = (max_length + 2)
+            adjusted_width = min(adjusted_width, 100)  # 最大幅を100文字に制限
+            worksheet.column_dimensions[column[0].column_letter].width = adjusted_width
+    
+    # ダウンロードボタンの表示
+    with open(output_file, 'rb') as f:
+        excel_data = f.read()
+    
+    year_text = f"{selected_year}年の" if selected_year and selected_year != 'すべて' else "全期間の"
+    
+    # ダウンロードボタンのスタイルを設定
+    st.markdown("""
+        <style>
+        div.stDownloadButton > button {
+            background-color: #4F46E5;
+            color: white;
+            font-weight: bold;
+            padding: 0.6rem 1rem;
+            border-radius: 0.5rem;
+            border: none;
+            width: 100%;
+            margin-top: 10px;
+        }
+        div.stDownloadButton > button:hover {
+            background-color: #4338CA;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    st.download_button(
+        label=f'{year_text}データをExcelでダウンロード',
+        data=excel_data,
+        file_name=os.path.basename(output_file),
+        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        use_container_width=True,
+        key="download_excel"
+    )
 
 def main():
     st.set_page_config(
@@ -821,28 +921,20 @@ def main():
     )
     
     # ヘッダーの配置
-    header_col1, header_col2 = st.columns([3, 1])
-    with header_col2:
-        try:
-            st.image("data/Honda_Logo.svg.webp", width=150)
-        except:
-            st.write("Hondaロゴを表示するには、data/Honda_Logo.svg.webpが必要です")
-    
-    with header_col1:
-        st.title("Honda SAE WCX 技術トレンド分析")
-        st.markdown("""
-            <div style='
-                color: #666666;
-                font-size: 16px;
-                margin: -5px 0 25px 2px;
-                font-family: sans-serif;
-                line-height: 1.7;
-                letter-spacing: 0.3px;
-            '>
-                SAE WCXにおける技術発表論文に基づく自動車業界の技術動向分析・重点領域の可視化
-            </div>
-            <hr style='margin: 0 0 30px 0; border: none; height: 1px; background-color: #E2E8F0;'>
-        """, unsafe_allow_html=True)
+    st.title("SAE WCX 技術トレンド分析")
+    st.markdown("""
+        <div style='
+            color: #666666;
+            font-size: 16px;
+            margin: -5px 0 25px 2px;
+            font-family: sans-serif;
+            line-height: 1.7;
+            letter-spacing: 0.3px;
+        '>
+            SAE WCXにおける技術発表論文に基づく自動車業界の技術動向分析・重点領域の可視化
+        </div>
+        <hr style='margin: 0 0 30px 0; border: none; height: 1px; background-color: #E2E8F0;'>
+    """, unsafe_allow_html=True)
     
     # データの読み込み
     df = load_data()
@@ -870,14 +962,52 @@ def main():
     top_gainers, top_losers = calculate_yoy_changes(df)
     display_yoy_changes(df, top_gainers, top_losers)
     
+    # カテゴリ別年推移のグラフを表示
+    fig, subtitle = create_trend_line(df, None)
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        key="trend_line",
+        config={
+            'displayModeBar': True,
+            'displaylogo': False,
+            'responsive': True,
+            'toImageButtonOptions': {
+                'format': 'png',
+                'filename': 'カテゴリ別年推移',
+                'height': 800,
+                'width': 1600,
+                'scale': 2
+            },
+            'modeBarButtonsToAdd': ['downloadImage']
+        }
+    )
+    
+    # サブタイトルを表示
+    st.markdown(subtitle, unsafe_allow_html=True)
+    
+    # 区切り線を追加（マージンを調整）
+    st.markdown("""
+        <hr style='margin: 0 0 30px 0; border: none; height: 1px; background-color: #E2E8F0;'>
+    """, unsafe_allow_html=True)
+    
+    # グラフセクションのヘッダー
+    st.markdown("""
+        <div style='margin-top: 0;'>
+            <h3 style='color: #333333; font-size: 18px; margin-bottom: 15px;'>データ可視化</h3>
+        </div>
+    """, unsafe_allow_html=True)
+    
     # フィルター
     col1, col2 = st.columns(2)
+    
     with col1:
+        # 年の選択
         years = sorted(df['year'].unique())
         selected_year = st.selectbox('表示年を選択', ['すべて'] + list(years))
     
     with col2:
-        # カテゴリごとの総数を計算してソート
+        # カテゴリの選択
         category_totals = df.groupby('category_ja')['count'].sum().sort_values(ascending=False)
         categories = category_totals.index.tolist()
         selected_categories = st.multiselect('カテゴリを選択（複数選択可）', categories)
@@ -899,15 +1029,9 @@ def main():
         <hr style='margin-top: 30px; margin-bottom: 30px; border: none; height: 1px; background-color: #E2E8F0;'>
     """, unsafe_allow_html=True)
     
-    # 生データの表示
-    display_raw_data()
+    # 生データの表示（selected_yearを渡す）
+    display_raw_data(selected_year)
     
-    # フッター
-    st.markdown("""
-        <div style='text-align: center; color: #718096; padding: 20px; font-size: 14px;'>
-            <p>© 2025 Honda R&D Co., Ltd. | 最終更新: 2025年4月</p>
-        </div>
-    """, unsafe_allow_html=True)
 
 def display_data_visualizations(df, year_filter, category_filter):
     """データ可視化セクションを表示"""
@@ -934,9 +1058,19 @@ def display_data_visualizations(df, year_filter, category_filter):
         st.plotly_chart(
             cat_fig,
             use_container_width=True,
+            key="category_distribution",
             config={
-                'displayModeBar': False,
-                'responsive': True
+                'displayModeBar': True,
+                'displaylogo': False,
+                'responsive': True,
+                'toImageButtonOptions': {
+                    'format': 'png',
+                    'filename': 'カテゴリ分布',
+                    'height': 800,
+                    'width': 1200,
+                    'scale': 2
+                },
+                'modeBarButtonsToAdd': ['downloadImage']
             }
         )
     
@@ -946,9 +1080,19 @@ def display_data_visualizations(df, year_filter, category_filter):
         st.plotly_chart(
             sub_fig,
             use_container_width=True,
+            key="subcategory_distribution",
             config={
-                'displayModeBar': False,
-                'responsive': True
+                'displayModeBar': True,
+                'displaylogo': False,
+                'responsive': True,
+                'toImageButtonOptions': {
+                    'format': 'png',
+                    'filename': 'サブカテゴリ分布',
+                    'height': 800,
+                    'width': 1200,
+                    'scale': 2
+                },
+                'modeBarButtonsToAdd': ['downloadImage']
             }
         )
 
