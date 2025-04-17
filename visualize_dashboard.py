@@ -397,8 +397,7 @@ def create_trend_line(df, selected_categories=None):
 def calculate_yoy_changes(df):
     """前年比の変化を計算し、上位の増加・減少カテゴリーを返す"""
     # 年度ごとのカテゴリー別件数を計算
-    yearly_counts = df.groupby(['year', 'category_ja'])['paper_no'].count().reset_index()
-    yearly_counts.columns = ['year', 'category_ja', 'count']
+    yearly_counts = df.groupby(['year', 'category_ja']).size().reset_index(name='count')
     
     # 各年度の総件数を計算
     yearly_totals = yearly_counts.groupby('year')['count'].sum().reset_index()
