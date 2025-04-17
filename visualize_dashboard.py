@@ -842,7 +842,7 @@ def create_oem_trend_line(df):
     
     # レイアウトを設定
     fig.update_layout(
-        title='自動車メーカー別 発表件数の推移',
+        title='自動車メーカー別 発表件数',
         title_font=dict(size=14),
         xaxis=dict(
             title=None,
