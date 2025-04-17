@@ -303,60 +303,21 @@ def create_subcategory_bar(df, selected_year=None, selected_categories=None):
 
 def create_trend_line(df, selected_categories=None):
     """トレンドラインを作成"""
-    # 年ごとの合計を計算
-    yearly_total = df.groupby('year')['count'].sum().reset_index()
-    
-    # カテゴリーごとの年間データを計算し、構成比を算出
+    # カテゴリーごとの年間データを計算
     category_yearly = df.groupby(['year', 'category_ja'])['count'].sum().reset_index()
-    category_yearly = category_yearly.merge(yearly_total, on='year', suffixes=('', '_total'))
-    category_yearly['share'] = category_yearly['count'] / category_yearly['count_total'] * 100
-    
-    # 前年比の変化を計算
-    category_yearly = category_yearly.sort_values(['category_ja', 'year'])
-    category_yearly['prev_share'] = category_yearly.groupby('category_ja')['share'].shift(1)
-    category_yearly['yoy_change'] = (category_yearly['share'] - category_yearly['prev_share']).round(1)
-    
-    # トレンドスコアの計算
-    # 1. 全体の変化の大きさ（絶対値）
-    category_yearly['total_change'] = category_yearly.groupby('category_ja')['yoy_change'].transform('sum').abs()
-    
-    # 2. 変化の持続性（標準偏差）
-    category_yearly['change_std'] = category_yearly.groupby('category_ja')['yoy_change'].transform('std')
-    
-    # 3. 平均シェア
-    category_yearly['avg_share'] = category_yearly.groupby('category_ja')['share'].transform('mean')
-    
-    # 最終的なスコア計算
-    # 変化の大きさ × 持続性 × シェアの重み付け
-    category_scores = category_yearly.groupby('category_ja').agg({
-        'total_change': 'first',
-        'change_std': 'first',
-        'avg_share': 'first'
-    }).reset_index()
-    
-    # スコアの正規化
-    category_scores['change_score'] = (category_scores['total_change'] / category_scores['total_change'].max())
-    category_scores['consistency_score'] = (1 - category_scores['change_std'] / category_scores['change_std'].max())
-    category_scores['share_score'] = (category_scores['avg_share'] / category_scores['avg_share'].max())
-    
-    # 総合スコアの計算（重み付け）
-    category_scores['final_score'] = (
-        category_scores['change_score'] * 0.4 +  # 変化の大きさ
-        category_scores['consistency_score'] * 0.3 +  # 持続性
-        category_scores['share_score'] * 0.3  # シェアの重み
-    )
-    
-    # 変化の大きい上位10カテゴリーを選択
-    top_categories = category_scores.nlargest(10, 'final_score')['category_ja'].tolist()
-    
-    # データをフィルタリング
-    plot_data = category_yearly[category_yearly['category_ja'].isin(top_categories)]
     
     # グラフを作成
     fig = go.Figure()
     
-    for category in top_categories:
-        cat_data = plot_data[plot_data['category_ja'] == category]
+    # すべてのカテゴリーに対してトレースを追加
+    for category in sorted(df['category_ja'].unique()):
+        cat_data = category_yearly[category_yearly['category_ja'] == category]
+        
+        # 前年比の変化を計算
+        cat_data = cat_data.sort_values('year')
+        cat_data['prev_count'] = cat_data['count'].shift(1)
+        cat_data['yoy_change'] = ((cat_data['count'] - cat_data['prev_count']) / cat_data['prev_count'] * 100).round(1)
+        
         # 前年比の変化に応じて色を設定
         yoy_colors = []
         for change in cat_data['yoy_change']:
@@ -369,21 +330,21 @@ def create_trend_line(df, selected_categories=None):
         
         fig.add_trace(go.Scatter(
             x=cat_data['year'],
-            y=cat_data['share'],
+            y=cat_data['count'],
             name=category,
             mode='lines+markers',
             line=dict(color=COLOR_MAPPING.get(category, '#95A5A6')),
-            hovertemplate="<b>%{text}</b><br>年: %{x}<br>構成比: %{y:.1f}%<br>前年比: <span style='color: %{customdata[1]}'>%{customdata[0]}</span>pt<extra></extra>",
+            hovertemplate="<b>%{text}</b><br>年: %{x}<br>データ数: %{y}<br>前年比: <span style='color: %{customdata[1]}'>%{customdata[0]:+.1f}</span>%<extra></extra>",
             text=[category] * len(cat_data),
             customdata=list(zip(
-                cat_data['yoy_change'].fillna('-').astype(str),
+                cat_data['yoy_change'].fillna(0),
                 yoy_colors
             ))
         ))
     
     # レイアウトを設定
     fig.update_layout(
-        title='カテゴリ別年推移',
+        title='カテゴリ別データ数の推移',
         title_font=dict(size=14),
         xaxis=dict(
             tickmode='array',
@@ -394,10 +355,15 @@ def create_trend_line(df, selected_categories=None):
             gridwidth=1,
             gridcolor='#E2E8F0'
         ),
-        yaxis_title='構成比 (%)',
-        height=350,  # 高さを小さく
-        width=600,  # 幅を指定
-        margin=dict(t=30, b=80, l=50, r=150),  # 下マージンを増やして補足文のスペースを確保
+        yaxis=dict(
+            title='データ数',
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='#E2E8F0'
+        ),
+        height=500,  # 高さを大きくして見やすく
+        width=800,   # 幅を大きく
+        margin=dict(t=30, b=30, l=50, r=150),  # 下マージンを調整
         showlegend=True,
         legend=dict(
             orientation='v',  # 垂直方向に変更
@@ -405,19 +371,14 @@ def create_trend_line(df, selected_categories=None):
             y=0.5,
             xanchor='right',  # 右端に配置
             x=1.1,  # グラフの右端から少し離す
-            font=dict(size=9)
+            font=dict(size=9),
+            itemclick='toggleothers',  # 凡例クリックで他のトレースを非表示
+            itemdoubleclick='toggle'   # ダブルクリックで単一トレースの表示切替
         ),
         hovermode='closest'
     )
     
-    # サブタイトルを作成
-    subtitle = f"""
-        <div style='text-align: center; color: #666666; font-size: 8px; margin-top: -30px;'>
-            ※ 選定基準：全体割合の変化の大きさ（40%の重み）と全体に占めるシェアの大きさ（30%の重み）の合計スコアで上位10カテゴリーを表示<br>
-        </div>
-    """
-    
-    return fig, subtitle
+    return fig
 
 def calculate_yoy_changes(df):
     """カテゴリーごとの前年比変化を計算（構成比とデータ数の両方を考慮）"""
@@ -925,7 +886,7 @@ def main():
     st.markdown("""
         <div style='
             color: #666666;
-            font-size: 16px;
+            font-size: 13px;
             margin: -5px 0 25px 2px;
             font-family: sans-serif;
             line-height: 1.7;
@@ -963,7 +924,7 @@ def main():
     display_yoy_changes(df, top_gainers, top_losers)
     
     # カテゴリ別年推移のグラフを表示
-    fig, subtitle = create_trend_line(df, None)
+    fig = create_trend_line(df, None)
     st.plotly_chart(
         fig,
         use_container_width=True,
@@ -982,14 +943,6 @@ def main():
             'modeBarButtonsToAdd': ['downloadImage']
         }
     )
-    
-    # サブタイトルを表示
-    st.markdown(subtitle, unsafe_allow_html=True)
-    
-    # 区切り線を追加（マージンを調整）
-    st.markdown("""
-        <hr style='margin: 0 0 30px 0; border: none; height: 1px; background-color: #E2E8F0;'>
-    """, unsafe_allow_html=True)
     
     # グラフセクションのヘッダー
     st.markdown("""
