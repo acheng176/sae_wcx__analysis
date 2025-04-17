@@ -334,7 +334,7 @@ def create_trend_line(df, selected_categories=None):
             name=category,
             mode='lines+markers',
             line=dict(color=COLOR_MAPPING.get(category, '#95A5A6')),
-            hovertemplate="<b>%{text}</b><br>年: %{x}<br>データ数: %{y}<br>前年比: <span style='color: %{customdata[1]}'>%{customdata[0]:+.1f}</span>%<extra></extra>",
+            hovertemplate="<b>%{text}</b><br>年: %{x}<br>発表件数: %{y}<br>前年比: <span style='color: %{customdata[1]}'>%{customdata[0]:+.1f}</span>%<extra></extra>",
             text=[category] * len(cat_data),
             customdata=list(zip(
                 cat_data['yoy_change'].fillna(0),
@@ -356,7 +356,7 @@ def create_trend_line(df, selected_categories=None):
             gridcolor='#E2E8F0'
         ),
         yaxis=dict(
-            title='データ数',
+            title='発表件数',
             showgrid=True,
             gridwidth=1,
             gridcolor='#E2E8F0'
@@ -493,7 +493,7 @@ def display_yoy_changes(df, top_gainers, top_losers):
         st.markdown("""
             <div style='font-size: 14px; color: #333333; font-weight: bold; margin-bottom: 5px;'>注目度変化</div>
             <div style='font-size: 12px; color: #666666; font-weight: normal; margin-bottom: 10px; border-bottom: 2px solid #666666; padding-bottom: 6px;'>
-                前年からの変化（構成比: %ポイント, データ数: %）
+                前年からの変化（構成比: %ポイント, 発表件数: %）
             </div>
         """, unsafe_allow_html=True)
         
@@ -543,7 +543,7 @@ def display_yoy_changes(df, top_gainers, top_losers):
         st.markdown("""
             <div style='font-size: 14px; color: #333333; font-weight: bold; margin-bottom: 5px;'>注目度上昇</div>
             <div style='font-size: 12px; color: #666666; font-weight: normal; margin-bottom: 10px; border-bottom: 2px solid #22C55E; padding-bottom: 6px;'>
-                前年からの変化（構成比: %ポイント, データ数: %）
+                前年からの変化（構成比: %ポイント, 発表件数: %）
             </div>
         """, unsafe_allow_html=True)
         
@@ -591,7 +591,7 @@ def display_yoy_changes(df, top_gainers, top_losers):
         st.markdown("""
             <div style='font-size: 14px; color: #333333; font-weight: bold; margin-bottom: 5px;'>注目度減少</div>
             <div style='font-size: 12px; color: #666666; font-weight: normal; margin-bottom: 10px; border-bottom: 2px solid #EF4444; padding-bottom: 6px;'>
-                前年からの変化（構成比: %ポイント, データ数: %）
+                前年からの変化（構成比: %ポイント, 発表件数: %）
             </div>
         """, unsafe_allow_html=True)
         
@@ -722,6 +722,30 @@ def load_raw_data(year=None):
             axis=1
         )
         
+        # 自動車メーカーの抽出
+        def extract_oem(row):
+            affiliations = str(row['main_author_affiliation']) + ' ' + str(row['co_author_affiliation'])
+            affiliations = affiliations.upper()  # 大文字に変換して比較
+            
+            if 'HYUNDAI' in affiliations:
+                return 'Hyundai'
+            elif 'FORD' in affiliations:
+                return 'Ford'
+            elif 'TOYOTA' in affiliations:
+                return 'Toyota'
+            elif 'HONDA' in affiliations:
+                return 'Honda'
+            elif 'STELLANTIS' in affiliations or 'CHRYSLER' in affiliations or 'FCA' in affiliations:
+                return 'Stellantis'
+            elif 'GENERAL MOTORS' in affiliations or 'GM ' in affiliations:
+                return 'GM'
+            elif 'NISSAN' in affiliations:
+                return 'Nissan'
+            return ''
+        
+        # 自動車メーカーカラムを追加
+        df['自動車メーカー'] = df.apply(extract_oem, axis=1)
+        
         # No列を追加
         df['No'] = range(1, len(df) + 1)
         
@@ -731,24 +755,143 @@ def load_raw_data(year=None):
         
         # 列の順序を変更
         df = df[['No', 'year', 'category_ja', 'subcategory_ja', 'session_name', 'session_code', 
-                'paper_no', 'title', '著者', 'overview', 'organizers', 'chairperson']]
+                'paper_no', 'title', '著者', '自動車メーカー', 'overview', 'organizers', 'chairperson']]
         
         # 列名を日本語に変更
         df.columns = ['No', '年', 'カテゴリ', 'サブカテゴリ', 'セッション名', 'セッションコード', 
-                     '論文番号', 'タイトル', '著者', '概要', 'オーガナイザー', 'チェアパーソン']
+                     '論文番号', 'タイトル', '著者', '自動車メーカー', '概要', 'オーガナイザー', 'チェアパーソン']
         
     return df
 
+def create_oem_trend_line(df):
+    """自動車メーカー別の発表件数推移グラフを作成"""
+    # 年とメーカーごとの発表件数を集計
+    oem_yearly = df[df['自動車メーカー'] != ''].groupby(['年', '自動車メーカー']).size().reset_index(name='件数')
+    
+    # グラフを作成
+    fig = go.Figure()
+    
+    # メーカー別の色を定義（より薄く柔らかい配色）
+    oem_colors = {
+        'Toyota': '#FF6B6B',      # 薄い赤
+        'Honda': '#4DABF7',       # 薄い青
+        'Nissan': '#FF8787',      # 薄い赤
+        'GM': '#74C0FC',          # 薄い青
+        'Ford': '#339AF0',        # 薄い青
+        'Hyundai': '#5F3DC4',     # 薄い紫
+        'Stellantis': '#9C36B5'   # 薄い紫
+    }
+    
+    # メーカーごとにトレースを追加
+    for oem in sorted(oem_yearly['自動車メーカー'].unique()):
+        oem_data = oem_yearly[oem_yearly['自動車メーカー'] == oem]
+        
+        # 前年比の変化を計算
+        oem_data = oem_data.sort_values('年')
+        oem_data['前年件数'] = oem_data['件数'].shift(1)
+        oem_data['前年比'] = ((oem_data['件数'] - oem_data['前年件数']) / oem_data['前年件数'] * 100).round(1)
+        
+        # 前年比の変化に応じて色を設定
+        yoy_colors = []
+        for change in oem_data['前年比']:
+            if pd.isna(change):
+                yoy_colors.append('#666666')  # 灰色（最初の年）
+            elif change > 0:
+                yoy_colors.append('#22C55E')  # 緑色（増加）
+            else:
+                yoy_colors.append('#EF4444')  # 赤色（減少）
+        
+        fig.add_trace(go.Scatter(
+            x=oem_data['年'],
+            y=oem_data['件数'],
+            name=oem,
+            mode='lines+markers',
+            line=dict(color=oem_colors.get(oem, '#95A5A6'), width=2),  # 線の太さを2に設定
+            marker=dict(size=8),  # マーカーのサイズを8に設定
+            hovertemplate="<b>%{text}</b><br>年: %{x}<br>発表件数: %{y}<br>前年比: <span style='color: %{customdata[1]}'>%{customdata[0]:+.1f}%</span><extra></extra>",
+            text=[oem] * len(oem_data),
+            customdata=list(zip(
+                oem_data['前年比'].fillna(0),
+                yoy_colors
+            ))
+        ))
+    
+    # レイアウトを設定
+    fig.update_layout(
+        title='自動車メーカー別 発表件数の推移',
+        title_font=dict(size=14),
+        xaxis=dict(
+            title=None,  # x軸のタイトルを削除
+            tickmode='array',
+            ticktext=sorted(df['年'].unique()),
+            tickvals=sorted(df['年'].unique()),
+            dtick=1,
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='#E2E8F0'
+        ),
+        yaxis=dict(
+            title='発表件数',
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='#E2E8F0'
+        ),
+        height=400,
+        width=800,
+        margin=dict(t=30, b=30, l=50, r=150),
+        showlegend=True,
+        legend=dict(
+            orientation='v',
+            yanchor='middle',
+            y=0.5,
+            xanchor='right',
+            x=1.1,
+            font=dict(size=11),  # 凡例の文字サイズを11pxに増加
+            itemclick='toggleothers',
+            itemdoubleclick='toggle'
+        ),
+        hovermode='closest'
+    )
+    
+    return fig
+
 def display_raw_data(selected_year):
     """詳細データ"""
+    
+    # データの読み込み
+    df = load_raw_data(selected_year)
+    
+    # 自動車メーカー別発表件数推移グラフを表示
+    fig = create_oem_trend_line(df)
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        key="oem_trend_line",
+        config={
+            'displayModeBar': True,
+            'displaylogo': False,
+            'responsive': True,
+            'toImageButtonOptions': {
+                'format': 'png',
+                'filename': '自動車メーカー別発表件数推移',
+                'height': 800,
+                'width': 1600,
+                'scale': 2
+            },
+            'modeBarButtonsToAdd': ['downloadImage']
+        }
+    )
+    
+    # 区切り線を追加
+    st.markdown("""
+        <hr style='margin: 30px 0; border: none; height: 1px; background-color: #E2E8F0;'>
+    """, unsafe_allow_html=True)
+    
     st.markdown("""
         <div style='margin-top: 30px;'>
             <h3 style='color: #333333; font-size: 18px; margin-bottom: 15px;'>詳細データ一覧</h3>
         </div>
     """, unsafe_allow_html=True)
-    
-    # データの読み込み
-    df = load_raw_data(selected_year)
     
     # 年の文字列を作成
     year_str = f"_{selected_year}年" if selected_year and selected_year != 'すべて' else ""
@@ -798,6 +941,10 @@ def display_raw_data(selected_year):
             "著者": st.column_config.TextColumn(
                 "著者",
                 width=150
+            ),
+            "自動車メーカー": st.column_config.TextColumn(
+                "自動車メーカー",
+                width=100
             ),
             "概要": st.column_config.TextColumn(
                 "概要",
