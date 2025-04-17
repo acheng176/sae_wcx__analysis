@@ -122,13 +122,15 @@ def load_data():
         
     return df
 
-def create_category_distribution(df, selected_year=None, selected_categories=None):
+def create_category_distribution(df, selected_year=None, selected_categories=None, selected_subcategories=None):
     """カテゴリー分布の円グラフを作成（サイズ最適化版）"""
     filtered_df = df.copy()
     if selected_year:
         filtered_df = filtered_df[filtered_df['year'] == selected_year]
     if selected_categories:
         filtered_df = filtered_df[filtered_df['category_ja'].isin(selected_categories)]
+    if selected_subcategories:
+        filtered_df = filtered_df[filtered_df['subcategory_ja'].isin(selected_subcategories)]
     
     # データが空の場合は空のグラフを返す
     if filtered_df.empty:
@@ -191,6 +193,10 @@ def create_category_distribution(df, selected_year=None, selected_categories=Non
         title += f' - {", ".join(selected_categories)}'
     elif selected_categories and len(selected_categories) > 3:
         title += f' - {len(selected_categories)}カテゴリ選択中'
+    if selected_subcategories and len(selected_subcategories) <= 3:
+        title += f' - {", ".join(selected_subcategories)}'
+    elif selected_subcategories and len(selected_subcategories) > 3:
+        title += f' - {len(selected_subcategories)}サブカテゴリ選択中'
     
     fig.update_layout(
         title=title,
@@ -202,7 +208,7 @@ def create_category_distribution(df, selected_year=None, selected_categories=Non
             y=0.5,
             xanchor="left",
             x=-0.5,  # 左側に凡例を配置
-            font=dict(size=9),
+            font=dict(size=12, family='Arial'),  # 文字サイズを12pxに統一
             itemsizing='constant',
             itemwidth=30
         ),
@@ -220,13 +226,15 @@ def create_category_distribution(df, selected_year=None, selected_categories=Non
     
     return fig
 
-def create_subcategory_bar(df, selected_year=None, selected_categories=None):
+def create_subcategory_bar(df, selected_year=None, selected_categories=None, selected_subcategories=None):
     """サブカテゴリーの棒グラフを作成（行間最適化版）"""
     filtered_df = df.copy()
     if selected_year:
         filtered_df = filtered_df[filtered_df['year'] == selected_year]
     if selected_categories:
         filtered_df = filtered_df[filtered_df['category_ja'].isin(selected_categories)]
+    if selected_subcategories:
+        filtered_df = filtered_df[filtered_df['subcategory_ja'].isin(selected_subcategories)]
     
     # サブカテゴリーごとの集計
     subcategory_counts = filtered_df.groupby('subcategory_ja')['count'].sum().reset_index()
@@ -250,6 +258,10 @@ def create_subcategory_bar(df, selected_year=None, selected_categories=None):
         title += f' - {", ".join(selected_categories)}'
     elif selected_categories:
         title += f' - {len(selected_categories)}カテゴリ選択中'
+    if selected_subcategories and len(selected_subcategories) <= 3:
+        title += f' - {", ".join(selected_subcategories)}'
+    elif selected_subcategories:
+        title += f' - {len(selected_subcategories)}サブカテゴリ選択中'
     
     # 棒グラフの作成
     fig = go.Figure(data=[
@@ -270,10 +282,10 @@ def create_subcategory_bar(df, selected_year=None, selected_categories=None):
     fig.update_layout(
         title=title,
         title_font=dict(size=14),
-        xaxis_title='件数',
+        xaxis_title='発表件数',
         yaxis=dict(
             title='',  # y軸のタイトルを削除
-            tickfont=dict(size=10),
+            tickfont=dict(size=12),  # サブカテゴリ名の文字サイズを12pxに増加
             automargin=True
         ),
         height=bar_height,
@@ -344,7 +356,7 @@ def create_trend_line(df, selected_categories=None):
     
     # レイアウトを設定
     fig.update_layout(
-        title='カテゴリ別データ数の推移',
+        title='カテゴリ別発表件数',
         title_font=dict(size=14),
         xaxis=dict(
             tickmode='array',
@@ -353,7 +365,8 @@ def create_trend_line(df, selected_categories=None):
             dtick=1,
             showgrid=True,
             gridwidth=1,
-            gridcolor='#E2E8F0'
+            gridcolor='#E2E8F0',
+            domain=[0, 0.8]  # 右側の幅を広げる
         ),
         yaxis=dict(
             title='発表件数',
@@ -361,19 +374,20 @@ def create_trend_line(df, selected_categories=None):
             gridwidth=1,
             gridcolor='#E2E8F0'
         ),
-        height=500,  # 高さを大きくして見やすく
-        width=800,   # 幅を大きく
-        margin=dict(t=30, b=30, l=50, r=150),  # 下マージンを調整
+        height=400,
+        width=1600,  # 幅を1600pxに拡大
+        margin=dict(t=30, b=30, l=50, r=150),
         showlegend=True,
         legend=dict(
-            orientation='v',  # 垂直方向に変更
-            yanchor='middle',  # 中央揃え
+            orientation='v',
+            yanchor='middle',
             y=0.5,
-            xanchor='right',  # 右端に配置
-            x=1.1,  # グラフの右端から少し離す
-            font=dict(size=9),
-            itemclick='toggleothers',  # 凡例クリックで他のトレースを非表示
-            itemdoubleclick='toggle'   # ダブルクリックで単一トレースの表示切替
+            xanchor='left',
+            x=0.85,
+            font=dict(size=12, family='Arial'),
+            itemclick='toggleothers',
+            itemdoubleclick='toggle',
+            bgcolor='rgba(255, 255, 255, 0.8)'
         ),
         hovermode='closest'
     )
@@ -768,22 +782,29 @@ def create_oem_trend_line(df):
     # 年とメーカーごとの発表件数を集計
     oem_yearly = df[df['自動車メーカー'] != ''].groupby(['年', '自動車メーカー']).size().reset_index(name='件数')
     
+    # 最新年のメーカー別ランキングを作成
+    latest_year = oem_yearly['年'].max()
+    latest_rankings = oem_yearly[oem_yearly['年'] == latest_year].sort_values('件数', ascending=False)
+    
     # グラフを作成
     fig = go.Figure()
     
-    # メーカー別の色を定義（より薄く柔らかい配色）
+    # メーカー別の色を定義（ビジネス向けの落ち着いた色合いに変更）
     oem_colors = {
-        'Toyota': '#FF6B6B',      # 薄い赤
-        'Honda': '#4DABF7',       # 薄い青
-        'Nissan': '#FF8787',      # 薄い赤
-        'GM': '#74C0FC',          # 薄い青
-        'Ford': '#339AF0',        # 薄い青
-        'Hyundai': '#5F3DC4',     # 薄い紫
-        'Stellantis': '#9C36B5'   # 薄い紫
+        'Toyota': '#1E40AF',  # 濃い青
+        'Honda': '#0F766E',   # 濃いターコイズ
+        'Nissan': '#4B5563',  # スレートグレー
+        'GM': '#6B21A8',      # 濃いバイオレット
+        'Ford': '#0369A1',    # 濃いスカイブルー
+        'Hyundai': '#5B21B6', # 濃いインディゴ
+        'Stellantis': '#9D174D'  # 濃いピンク
     }
     
-    # メーカーごとにトレースを追加
-    for oem in sorted(oem_yearly['自動車メーカー'].unique()):
+    # ランキング順にメーカーを並べ替え
+    ranked_oems = latest_rankings['自動車メーカー'].tolist()
+    
+    # メーカーごとにトレースを追加（ランキング順）
+    for oem in ranked_oems:
         oem_data = oem_yearly[oem_yearly['自動車メーカー'] == oem]
         
         # 前年比の変化を計算
@@ -801,13 +822,16 @@ def create_oem_trend_line(df):
             else:
                 yoy_colors.append('#EF4444')  # 赤色（減少）
         
+        # 最新年の件数を取得
+        latest_count = oem_data[oem_data['年'] == latest_year]['件数'].iloc[0]
+        
         fig.add_trace(go.Scatter(
             x=oem_data['年'],
             y=oem_data['件数'],
-            name=oem,
+            name=f"{oem} ({latest_count}件)",  # 年を削除
             mode='lines+markers',
-            line=dict(color=oem_colors.get(oem, '#95A5A6'), width=2),  # 線の太さを2に設定
-            marker=dict(size=8),  # マーカーのサイズを8に設定
+            line=dict(color=oem_colors.get(oem, '#95A5A6'), width=2),
+            marker=dict(size=8),
             hovertemplate="<b>%{text}</b><br>年: %{x}<br>発表件数: %{y}<br>前年比: <span style='color: %{customdata[1]}'>%{customdata[0]:+.1f}%</span><extra></extra>",
             text=[oem] * len(oem_data),
             customdata=list(zip(
@@ -821,14 +845,15 @@ def create_oem_trend_line(df):
         title='自動車メーカー別 発表件数の推移',
         title_font=dict(size=14),
         xaxis=dict(
-            title=None,  # x軸のタイトルを削除
+            title=None,
             tickmode='array',
             ticktext=sorted(df['年'].unique()),
             tickvals=sorted(df['年'].unique()),
             dtick=1,
             showgrid=True,
             gridwidth=1,
-            gridcolor='#E2E8F0'
+            gridcolor='#E2E8F0',
+            domain=[0, 0.8]  # 右側の幅を広げる
         ),
         yaxis=dict(
             title='発表件数',
@@ -837,18 +862,19 @@ def create_oem_trend_line(df):
             gridcolor='#E2E8F0'
         ),
         height=400,
-        width=800,
+        width=1600,  # 幅を1600pxに拡大
         margin=dict(t=30, b=30, l=50, r=150),
         showlegend=True,
         legend=dict(
             orientation='v',
             yanchor='middle',
             y=0.5,
-            xanchor='right',
-            x=1.1,
-            font=dict(size=11),  # 凡例の文字サイズを11pxに増加
+            xanchor='left',
+            x=0.85,
+            font=dict(size=12, family='Arial'),
             itemclick='toggleothers',
-            itemdoubleclick='toggle'
+            itemdoubleclick='toggle',
+            bgcolor='rgba(255, 255, 255, 0.8)'
         ),
         hovermode='closest'
     )
@@ -873,7 +899,7 @@ def display_raw_data(selected_year):
             'responsive': True,
             'toImageButtonOptions': {
                 'format': 'png',
-                'filename': '自動車メーカー別発表件数推移',
+                'filename': '自動車メーカー別発表件数',
                 'height': 800,
                 'width': 1600,
                 'scale': 2
@@ -1091,6 +1117,11 @@ def main():
         }
     )
     
+    # 区切り線を追加
+    st.markdown("""
+        <hr style='margin: 20px 0; border: none; height: 1px; background-color: #E2E8F0;'>
+    """, unsafe_allow_html=True)
+    
     # グラフセクションのヘッダー
     st.markdown("""
         <div style='margin-top: 0;'>
@@ -1099,7 +1130,7 @@ def main():
     """, unsafe_allow_html=True)
     
     # フィルター
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)  # 3列に変更
     
     with col1:
         # 年の選択
@@ -1112,17 +1143,19 @@ def main():
         categories = category_totals.index.tolist()
         selected_categories = st.multiselect('カテゴリを選択（複数選択可）', categories)
     
-    # フィルタの下に区切り線を追加
-    st.markdown("""
-        <hr style='margin: 20px 0; border: none; height: 1px; background-color: #E2E8F0;'>
-    """, unsafe_allow_html=True)
+    with col3:
+        # サブカテゴリの選択
+        subcategory_totals = df.groupby('subcategory_ja')['count'].sum().sort_values(ascending=False)
+        subcategories = subcategory_totals.index.tolist()
+        selected_subcategories = st.multiselect('サブカテゴリを選択（複数選択可）', subcategories)
     
     # 選択値の処理
     year_filter = None if selected_year == 'すべて' else selected_year
     category_filter = None if not selected_categories else selected_categories
+    subcategory_filter = None if not selected_subcategories else selected_subcategories
     
     # グラフの表示
-    display_data_visualizations(df, year_filter, category_filter)
+    display_data_visualizations(df, year_filter, category_filter, subcategory_filter)
     
     # 区切り線を追加
     st.markdown("""
@@ -1131,9 +1164,8 @@ def main():
     
     # 生データの表示（selected_yearを渡す）
     display_raw_data(selected_year)
-    
 
-def display_data_visualizations(df, year_filter, category_filter):
+def display_data_visualizations(df, year_filter, category_filter, subcategory_filter):
     """データ可視化セクションを表示"""
     col1, col2 = st.columns(2)
     
@@ -1149,12 +1181,16 @@ def display_data_visualizations(df, year_filter, category_filter):
             filter_info += f"【{', '.join(category_filter)}】"
         elif category_filter:
             filter_info += f"【{len(category_filter)}カテゴリ選択中】"
+        if subcategory_filter and len(subcategory_filter) <= 3:
+            filter_info += f"【{', '.join(subcategory_filter)}】"
+        elif subcategory_filter:
+            filter_info += f"【{len(subcategory_filter)}サブカテゴリ選択中】"
         
         if filter_info:
             st.markdown(f"<div style='text-align: center; color: #666666; font-size: 12px; margin-bottom: 10px;'>{filter_info}</div>", unsafe_allow_html=True)
         
         # カテゴリ分布の円グラフを表示
-        cat_fig = create_category_distribution(df, year_filter, category_filter)
+        cat_fig = create_category_distribution(df, year_filter, category_filter, subcategory_filter)
         st.plotly_chart(
             cat_fig,
             use_container_width=True,
@@ -1176,7 +1212,7 @@ def display_data_visualizations(df, year_filter, category_filter):
     
     with col2:
         # サブカテゴリ分布の棒グラフを表示
-        sub_fig = create_subcategory_bar(df, year_filter, category_filter)
+        sub_fig = create_subcategory_bar(df, year_filter, category_filter, subcategory_filter)
         st.plotly_chart(
             sub_fig,
             use_container_width=True,
