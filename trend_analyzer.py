@@ -1,7 +1,6 @@
 import os
 import pandas as pd
 import sqlite3
-import streamlit as st
 from openai import AzureOpenAI
 from dotenv import load_dotenv
 from db_handler import DatabaseHandler
@@ -9,20 +8,10 @@ from db_handler import DatabaseHandler
 class TrendAnalyzer:
     def __init__(self):
         load_dotenv()
-        
-        # Streamlit Cloudのシークレットと環境変数の両方をチェック
-        def get_env_var(var_name):
-            # Streamlit Cloudの場合
-            try:
-                return st.secrets.get(var_name, os.getenv(var_name))
-            except:
-                # ローカル環境の場合
-                return os.getenv(var_name)
-        
         self.client = AzureOpenAI(
-            api_key=get_env_var('AZURE_OPENAI_API_KEY'),
-            api_version=get_env_var('AZURE_OPENAI_API_VERSION'),
-            azure_endpoint=get_env_var('AZURE_OPENAI_ENDPOINT')
+            api_key=os.getenv('AZURE_OPENAI_API_KEY'),
+            api_version=os.getenv('AZURE_OPENAI_API_VERSION'),
+            azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT')
         )
         self.db = DatabaseHandler()
     
@@ -126,16 +115,9 @@ SAE WCXでの技術発表論文データを分析し、技術トレンドと今�
         各セクションは2-3行程度で、重要なポイントを箇条書きで示してください。
         """
         
-        # モデル名をシークレットまたは環境変数から取得
-        model_name = None
-        try:
-            model_name = st.secrets.get('AZURE_OPENAI_DEPLOYMENT_NAME')
-        except:
-            model_name = os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME')
-
         # Azure OpenAI APIを呼び出し
         response = self.client.chat.completions.create(
-            model=model_name,
+            model=os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME'),
             messages=[
                 {"role": "system", "content": "あなたは自動車業界の専門家で、SAE WCXのトレンド分析を行います。技術的な洞察と具体的な数値を含めた分析を提供してください。"},
                 {"role": "user", "content": prompt}

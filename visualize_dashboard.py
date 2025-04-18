@@ -20,20 +20,12 @@ except ImportError:
 # 環境変数の読み込み
 load_dotenv()
 
-# OpenAI APIキーが設定されているか確認（StreamlitのシークレットとローカルENVの両方をチェック）
-def get_env_var(var_name):
-    # Streamlit Cloudのシークレットをチェック
-    try:
-        return st.secrets.get(var_name, os.getenv(var_name))
-    except:
-        # ローカル環境の場合
-        return os.getenv(var_name)
-
+# OpenAI APIキーが設定されているか確認
 has_openai_config = all([
-    get_env_var("AZURE_OPENAI_API_KEY"),
-    get_env_var("AZURE_OPENAI_ENDPOINT"),
-    get_env_var("AZURE_OPENAI_API_VERSION"),
-    get_env_var("AZURE_OPENAI_DEPLOYMENT_NAME")
+    os.getenv("AZURE_OPENAI_API_KEY"),
+    os.getenv("AZURE_OPENAI_ENDPOINT"),
+    os.getenv("AZURE_OPENAI_API_VERSION"),
+    os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
 ])
 
 # カラーパレット
@@ -668,38 +660,9 @@ def display_yoy_changes(df, top_gainers, top_losers):
     """, unsafe_allow_html=True)
 
 def display_ai_button():
-    """AIボタンを表示"""
-    if not insights_available:
-        return False
-    
-    button_style = """
-    <style>
-    div.stButton > button {
-        background-color: #4F46E5;
-        color: white;
-        font-weight: bold;
-        padding: 0.6rem 1rem;
-        border-radius: 0.5rem;
-        border: none;
-        width: 100%;
-        margin-top: 10px;
-    }G
-    div.stButton > button:hover {
-        background-color: #4338CA;
-    }
-    </style>
-    """
-    st.markdown(button_style, unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col2:
-        if has_openai_config:
-            show_ai_report = st.button('AIによる分析レポート生成', use_container_width=True)
-            return show_ai_report
-        else:
-            st.info("AIによる分析レポートを使用するには、Azure OpenAI APIの設定が必要です。.envファイルにAPIキーとエンドポイントを設定してください。")
-            return False
+    """AI分析ボタンを表示"""
+    if st.button("AIによる技術トレンド分析", key="ai_analysis_button"):
+        st.markdown(AI_ANALYSIS_TEXT)
 
 def load_raw_data(year=None):
     """生データを読み込む"""
@@ -1080,25 +1043,6 @@ def main():
     
     # データの読み込み
     df = load_data()
-    
-    # AIボタンの表示
-    show_ai_report = display_ai_button()
-    
-    # AIレポートの表示（ボタンがクリックされた場合）
-    if show_ai_report:
-        try:
-            # 前年比の変化率を計算
-            top_gainers, top_losers = calculate_yoy_changes(df)
-            
-            # AIレポートを表示
-            display_ai_insights(df, top_gainers, top_losers)
-            
-            # 区切り線を追加
-            st.markdown("""
-                <hr style='margin-top: 30px; margin-bottom: 30px; border: none; height: 1px; background-color: #E2E8F0;'>
-            """, unsafe_allow_html=True)
-        except Exception as e:
-            st.error(f"AIレポート生成中にエラーが発生しました: {str(e)}")
     
     # 前年比の変化率を計算と表示
     top_gainers, top_losers = calculate_yoy_changes(df)
