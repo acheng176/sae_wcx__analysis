@@ -28,11 +28,8 @@ venv/
 ENV/
 env/
 
-# 出力ディレクトリの特定部分だけ除外
-output/*
-!output/db/
-output/db/*
-!output/db/*.db
+# 出力ディレクトリは除外しない
+# output/
 
 # PDFデータ（必要に応じて）
 data/input/*.pdf
