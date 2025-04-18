@@ -499,22 +499,47 @@ def main():
         year = extract_year_from_text(input_text)
         if year:
             print(f"文書から抽出した年: {year}")
-        
-        # 構造化データの抽出
-        data = extract_structured_data(input_text)
-        
-        # データの検証
-        if validate_data_format(data):
-            # データをJSONファイルとして保存
-            output_path = save_to_json(data)
-            if output_path:
-                print(f"データを {output_path} に保存しました")
-            else:
-                print("Error: データの保存に失敗しました")
         else:
-            print("Error: データの形式が無効です")
+            print("Warning: 文書から年を抽出できませんでした")
+        
+        # データ抽出の実行
+        results = extract_structured_data(input_text)
+        
+        if results:
+            # カテゴリー分類の実行
+            from categorizer import add_categories_to_data
+            results = add_categories_to_data(results)
+            
+            # 結果をJSONに保存
+            output_path = save_to_json(results)
+            
+            # 結果をExcelに保存
+            try:
+                from excel_writer import write_to_excel
+                excel_output = os.path.join("output", f"{year}_wcx_sessions.xlsx")
+                excel_file, df = write_to_excel(results, excel_output)
+                print(f"Excelファイルを保存しました: {excel_file}")
+                
+                # SQLiteデータベースに保存
+                from db_handler import DatabaseHandler
+                db = DatabaseHandler()
+                if db.store_data(df, year):
+                    # カテゴリー分布のグラフを作成
+                    graph_file = db.create_visualization(year)
+                    if graph_file:
+                        print(f"カテゴリー分布グラフを作成しました: {graph_file}")
+            except Exception as e:
+                print(f"出力処理中にエラー: {e}")
+            
+            if output_path:
+                print(f"処理が完了しました。JSONファイル: {output_path}")
+            else:
+                print("Error: JSONファイルの保存に失敗しました")
+        else:
+            print("Error: データの抽出に失敗しました")
+            
     except Exception as e:
-        print(f"Error: メイン処理中にエラーが発生: {e}")
+        print(f"Error: プログラム実行中にエラー: {e}")
 
 if __name__ == "__main__":
     main()
