@@ -20,12 +20,20 @@ except ImportError:
 # 環境変数の読み込み
 load_dotenv()
 
-# OpenAI APIキーが設定されているか確認
+# OpenAI APIキーが設定されているか確認（StreamlitのシークレットとローカルENVの両方をチェック）
+def get_env_var(var_name):
+    # Streamlit Cloudのシークレットをチェック
+    try:
+        return st.secrets.get(var_name, os.getenv(var_name))
+    except:
+        # ローカル環境の場合
+        return os.getenv(var_name)
+
 has_openai_config = all([
-    os.getenv("AZURE_OPENAI_API_KEY"),
-    os.getenv("AZURE_OPENAI_ENDPOINT"),
-    os.getenv("AZURE_OPENAI_API_VERSION"),
-    os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
+    get_env_var("AZURE_OPENAI_API_KEY"),
+    get_env_var("AZURE_OPENAI_ENDPOINT"),
+    get_env_var("AZURE_OPENAI_API_VERSION"),
+    get_env_var("AZURE_OPENAI_DEPLOYMENT_NAME")
 ])
 
 # カラーパレット

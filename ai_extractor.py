@@ -492,8 +492,8 @@ def main():
     try:
         # テキストファイルから入力を読み込む
         input_file = "input.txt"
-        with open(input_file, 'r', encoding='utf-8') as f:
-            input_text = f.read()
+            with open(input_file, 'r', encoding='utf-8') as f:
+                input_text = f.read()
         
         # 年を抽出して表示
         year = extract_year_from_text(input_text)
