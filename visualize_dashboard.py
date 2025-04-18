@@ -396,72 +396,94 @@ def create_trend_line(df, selected_categories=None):
 
 def calculate_yoy_changes(df):
     """前年比の変化を計算し、上位の増加・減少カテゴリーを返す"""
-    # 年度ごとのカテゴリー別件数を計算
-    yearly_counts = df.groupby(['year', 'category_ja']).size().reset_index(name='count')
-    
-    # 各年度の総件数を計算
-    yearly_totals = yearly_counts.groupby('year')['count'].sum().reset_index()
-    yearly_totals.columns = ['year', 'total_count']
-    
-    # カテゴリーごとのシェアを計算
-    yearly_counts = yearly_counts.merge(yearly_totals, on='year')
-    yearly_counts['share'] = yearly_counts['count'] / yearly_counts['total_count'] * 100
-    
-    # 年度ごとの変化を計算
-    changes = []
-    for year in sorted(yearly_counts['year'].unique()):
-        if year == min(yearly_counts['year']):
-            continue
-            
-        prev_year = year - 1
-        current_data = yearly_counts[yearly_counts['year'] == year]
-        prev_data = yearly_counts[yearly_counts['year'] == prev_year]
+    try:
+        # 年度ごとのカテゴリー別件数を計算
+        yearly_counts = df.groupby(['year', 'category_ja']).size().reset_index(name='count')
         
-        for _, row in current_data.iterrows():
-            category = row['category_ja']
-            current_count = row['count']
-            current_share = row['share']
+        # 各年度の総件数を計算
+        yearly_totals = yearly_counts.groupby('year')['count'].sum().reset_index()
+        yearly_totals.columns = ['year', 'total_count']
+        
+        # カテゴリーごとのシェアを計算
+        yearly_counts = yearly_counts.merge(yearly_totals, on='year')
+        yearly_counts['share'] = yearly_counts['count'] / yearly_counts['total_count'] * 100
+        
+        # 年度ごとの変化を計算
+        changes = []
+        for year in sorted(yearly_counts['year'].unique()):
+            if year == min(yearly_counts['year']):
+                continue
+                
+            prev_year = year - 1
+            current_data = yearly_counts[yearly_counts['year'] == year]
+            prev_data = yearly_counts[yearly_counts['year'] == prev_year]
             
-            prev_row = prev_data[prev_data['category_ja'] == category]
-            if not prev_row.empty:
-                prev_count = prev_row['count'].iloc[0]
-                prev_share = prev_row['share'].iloc[0]
+            for _, row in current_data.iterrows():
+                category = row['category_ja']
+                current_count = row['count']
+                current_share = row['share']
                 
-                # 数値型に変換し、欠損値を0に置換
-                count_change = float(current_count) - float(prev_count)
-                share_change = float(current_share) - float(prev_share)
-                count_change_rate = (count_change / float(prev_count) * 100) if prev_count != 0 else 0
+                prev_row = prev_data[prev_data['category_ja'] == category]
+                if not prev_row.empty:
+                    prev_count = prev_row['count'].iloc[0]
+                    prev_share = prev_row['share'].iloc[0]
+                    
+                    # 数値型に変換し、欠損値を0に置換
+                    count_change = float(current_count) - float(prev_count)
+                    share_change = float(current_share) - float(prev_share)
+                    count_change_rate = (count_change / float(prev_count) * 100) if prev_count != 0 else 0
+                    
+                    # 最終スコアの計算（シェア変化と件数変化率の加重平均）
+                    final_score = (share_change * 0.7) + (count_change_rate * 0.3)
+                    
+                    changes.append({
+                        'year': year,
+                        'category_ja': category,
+                        'count_change': count_change,
+                        'share_change': share_change,
+                        'count_change_rate': count_change_rate,
+                        'final_score': final_score
+                    })
+        
+        if not changes:
+            # 変化データがない場合は空のDataFrameを返す
+            empty_df = pd.DataFrame(columns=['category_ja', 'share_change', 'count_change_rate', 'final_score'])
+            return empty_df, empty_df
+            
+        changes_df = pd.DataFrame(changes)
+        
+        # 欠損値を0で埋める
+        changes_df = changes_df.fillna(0)
+        
+        # 必要な列が存在することを確認し、存在しない場合は作成
+        numeric_columns = ['count_change', 'share_change', 'count_change_rate', 'final_score']
+        for col in numeric_columns:
+            if col not in changes_df.columns:
+                changes_df[col] = 0
                 
-                # 最終スコアの計算（シェア変化と件数変化率の加重平均）
-                final_score = (share_change * 0.7) + (count_change_rate * 0.3)
-                
-                changes.append({
-                    'year': year,
-                    'category_ja': category,
-                    'count_change': count_change,
-                    'share_change': share_change,
-                    'count_change_rate': count_change_rate,
-                    'final_score': final_score
-                })
-    
-    changes_df = pd.DataFrame(changes)
-    
-    # 欠損値を0で埋める
-    changes_df = changes_df.fillna(0)
-    
-    # 数値型に変換
-    numeric_columns = ['count_change', 'share_change', 'count_change_rate', 'final_score']
-    for col in numeric_columns:
-        changes_df[col] = pd.to_numeric(changes_df[col], errors='coerce').fillna(0)
-    
-    # 上位10件を取得
-    top_gainers = changes_df.nlargest(10, 'share_change')[['category_ja', 'share_change', 'count_change_rate', 'final_score']]
-    top_losers = changes_df.nsmallest(10, 'share_change')[['category_ja', 'share_change', 'count_change_rate', 'final_score']]
-    
-    return top_gainers, top_losers
+        # 数値型に変換
+        for col in numeric_columns:
+            changes_df[col] = pd.to_numeric(changes_df[col], errors='coerce').fillna(0)
+        
+        # 上位10件を取得
+        top_gainers = changes_df.nlargest(10, 'share_change')[['category_ja', 'share_change', 'count_change_rate', 'final_score']]
+        top_losers = changes_df.nsmallest(10, 'share_change')[['category_ja', 'share_change', 'count_change_rate', 'final_score']]
+        
+        return top_gainers, top_losers
+        
+    except Exception as e:
+        print(f"calculate_yoy_changesでエラー: {e}")
+        # エラーが発生した場合は空のデータフレームを返す
+        empty_df = pd.DataFrame(columns=['category_ja', 'share_change', 'count_change_rate', 'final_score'])
+        return empty_df, empty_df
 
 def display_yoy_changes(df, top_gainers, top_losers):
     """構成比の変化を表示"""
+
+    # 空のデータフレームの場合は表示をスキップ
+    if top_gainers.empty and top_losers.empty:
+        st.info("年度比較データがありません。複数年度のデータが必要です。")
+        return
     
     # トレンド分析の実行
     analyzer = TrendAnalyzer()
@@ -1107,10 +1129,14 @@ def main():
         except Exception as e:
             st.error(f"AIレポート生成中にエラーが発生しました: {str(e)}")
     
-    # 前年比の変化率を計算と表示
-    top_gainers, top_losers = calculate_yoy_changes(df)
-    display_yoy_changes(df, top_gainers, top_losers)
-    
+        # 前年比の変化率を計算と表示（エラーハンドリングを追加）
+    try:
+        top_gainers, top_losers = calculate_yoy_changes(df)
+        if not top_gainers.empty or not top_losers.empty:
+            display_yoy_changes(df, top_gainers, top_losers)
+    except Exception as e:
+        st.error(f"年度比較データの計算中にエラーが発生しました: {str(e)}")
+
     # カテゴリ別年推移のグラフを表示
     fig = create_trend_line(df, None)
     st.plotly_chart(
