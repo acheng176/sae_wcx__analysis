@@ -452,50 +452,59 @@ def display_yoy_changes(df, top_gainers, top_losers):
     analyzer = TrendAnalyzer()
     trend_analysis = analyzer.get_trend_analysis()
     
+    # 文章を分割して整形（空行で分割）
+    sections = trend_analysis.strip().split('\n\n')
+    
+    # 各セクションからタイトルと内容を抽出（セクションが存在する場合のみ）
+    overview = sections[0].strip() if len(sections) > 0 else ""
+    # 本文から番号を削除（1.や1など、様々なパターンに対応）
+    section1 = sections[1].strip().replace('1. ', '').replace('1.', '').replace('1、', '').replace('1 ', '') if len(sections) > 1 else ""
+    section2 = sections[2].strip().replace('2. ', '').replace('2.', '').replace('2、', '').replace('2 ', '') if len(sections) > 2 else ""
+    section3 = sections[3].strip().replace('3. ', '').replace('3.', '').replace('3、', '').replace('3 ', '') if len(sections) > 3 else ""
+    
     # カードの追加
     st.markdown(f"""
         <div style='
             background-color: #F8FAFC;
             border-radius: 8px;
-            padding: 12px;
+            padding: 20px;
             margin-bottom: 15px;
             border: 1px solid #E2E8F0;
         '>
-            <div style='color: #333333; font-size: 14px; font-weight: bold; margin-bottom: 6px;'>
+            <div style='color: #333333; font-size: 18px; font-weight: bold; margin-bottom: 20px;'>
                 AIによる技術トレンド分析
             </div>
-            <style>
-                .trend-analysis h1 {{ 
-                    display: none !important;
-                }}
-                .trend-analysis h2 {{ 
-                    font-size: 11px !important; 
-                    margin-top: 12px !important; 
-                    margin-bottom: 4px !important; 
-                    color: #333333 !important;
-                    font-weight: normal !important;
-                }}
-                .trend-analysis h3 {{ 
-                    display: none !important;
-                }}
-                .trend-analysis ul {{ 
-                    margin-top: 2px !important; 
-                    margin-bottom: 4px !important;
-                    padding-left: 20px !important;
-                }}
-                .trend-analysis li {{ 
-                    margin-bottom: 2px !important;
-                    font-size: 13px !important;
-                    line-height: 1.6 !important;
-                }}
-                .trend-analysis p {{
-                    font-size: 13px !important;
-                    line-height: 1.6 !important;
-                    margin-bottom: 8px !important;
-                }}
-            </style>
-            <div class='trend-analysis' style='color: #1F2937; font-size: 13px; line-height: 1.6;'>
-                {trend_analysis}
+            <div style='margin-bottom: 24px;'>
+                <div style='font-size: 16px; font-weight: bold; color: #1F2937; margin-bottom: 12px;'>
+                    全体概要
+                </div>
+                <div style='font-size: 14px; line-height: 1.7; color: #374151;'>
+                    {overview}
+                </div>
+            </div>
+            <div style='margin-bottom: 24px;'>
+                <div style='font-size: 16px; font-weight: bold; color: #1F2937; margin-bottom: 12px;'>
+                    1. 自動運転技術が業界の主要課題へ
+                </div>
+                <div style='font-size: 14px; line-height: 1.7; color: #374151;'>
+                    {section1}
+                </div>
+            </div>
+            <div style='margin-bottom: 24px;'>
+                <div style='font-size: 16px; font-weight: bold; color: #1F2937; margin-bottom: 12px;'>
+                    2. 電動化シフトが鮮明に
+                </div>
+                <div style='font-size: 14px; line-height: 1.7; color: #374151;'>
+                    {section2}
+                </div>
+            </div>
+            <div style='margin-bottom: 24px;'>
+                <div style='font-size: 16px; font-weight: bold; color: #1F2937; margin-bottom: 12px;'>
+                    3. 車両開発と環境対応技術の進化
+                </div>
+                <div style='font-size: 14px; line-height: 1.7; color: #374151;'>
+                    {section3}
+                </div>
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -659,16 +668,11 @@ def display_yoy_changes(df, top_gainers, top_losers):
         <hr style='margin: 20px 0; border: none; height: 1px; background-color: #E2E8F0;'>
     """, unsafe_allow_html=True)
 
-def display_ai_button():
-    """AI分析ボタンを表示"""
-    if st.button("AIによる技術トレンド分析", key="ai_analysis_button"):
-        st.markdown(AI_ANALYSIS_TEXT)
-
 def load_raw_data(year=None):
     """生データを読み込む"""
     db = DatabaseHandler()
     with sqlite3.connect(db.db_path) as conn:
-        # 年フィルターに基づいてクエリを構築
+        # 年フィルターに基づいてクエリを構築AIによる技術トレンド分析
         base_query = """
         SELECT 
             year,
