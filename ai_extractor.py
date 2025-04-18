@@ -144,8 +144,8 @@ def chunk_text(text, max_chunk_size=6000):
                         best_pos = pos
                 except Exception as e:
                     print(f"Warning: マーカー '{marker}' の検索中にエラー: {e}")
-                    continue
-            
+                continue
+                
             if best_pos > 0:
                 chunk_end = best_pos
             
@@ -161,7 +161,7 @@ def chunk_text(text, max_chunk_size=6000):
             print(f"Progress: チャンク {len(chunks)} 作成完了 ({chunk_end}/{len(text)} 文字処理済み)")
         
         return chunks
-    except Exception as e:
+        except Exception as e:
         print(f"Error: テキスト分割中にエラー発生: {e}")
         return [text]  # エラー時は元のテキストを1つのチャンクとして返す
 
@@ -386,9 +386,11 @@ def extract_structured_data(text, debug_mode=False, debug_chunk_count=5):
                         print(f"Error: JSON解析エラー: {str(e)}")
                         print(f"Position: 行 {e.lineno}, 列 {e.colno}")
                         print(f"問題のある部分: {content[max(0, e.pos-50):min(len(content), e.pos+50)]}")
+                        continue
                 
             except Exception as chunk_error:
                 print(f"Error: チャンク {i} の処理中にエラーが発生: {str(chunk_error)}")
+            continue
         
         print(f"\n処理完了: 合計 {len(all_results)} 件のレコードを抽出")
         print(f"抽出されたユニークなセッション数: {len({r['session_code'] for r in all_results})}")
@@ -497,47 +499,22 @@ def main():
         year = extract_year_from_text(input_text)
         if year:
             print(f"文書から抽出した年: {year}")
-        else:
-            print("Warning: 文書から年を抽出できませんでした")
         
-        # データ抽出の実行
-        results = extract_structured_data(input_text)
+        # 構造化データの抽出
+        data = extract_structured_data(input_text)
         
-        if results:
-            # カテゴリー分類の実行
-            from categorizer import add_categories_to_data
-            results = add_categories_to_data(results)
-            
-            # 結果をJSONに保存
-            output_path = save_to_json(results)
-            
-            # 結果をExcelに保存
-            try:
-                from excel_writer import write_to_excel
-                excel_output = os.path.join("output", f"{year}_wcx_sessions.xlsx")
-                excel_file, df = write_to_excel(results, excel_output)
-                print(f"Excelファイルを保存しました: {excel_file}")
-                
-                # SQLiteデータベースに保存
-                from db_handler import DatabaseHandler
-                db = DatabaseHandler()
-                if db.store_data(df, year):
-                    # カテゴリー分布のグラフを作成
-                    graph_file = db.create_visualization(year)
-                    if graph_file:
-                        print(f"カテゴリー分布グラフを作成しました: {graph_file}")
-            except Exception as e:
-                print(f"出力処理中にエラー: {e}")
-            
+        # データの検証
+        if validate_data_format(data):
+            # データをJSONファイルとして保存
+            output_path = save_to_json(data)
             if output_path:
-                print(f"処理が完了しました。JSONファイル: {output_path}")
+                print(f"データを {output_path} に保存しました")
             else:
-                print("Error: JSONファイルの保存に失敗しました")
+                print("Error: データの保存に失敗しました")
         else:
-            print("Error: データの抽出に失敗しました")
-            
+            print("Error: データの形式が無効です")
     except Exception as e:
-        print(f"Error: プログラム実行中にエラー: {e}")
+        print(f"Error: メイン処理中にエラーが発生: {e}")
 
 if __name__ == "__main__":
     main()

@@ -30,6 +30,8 @@ env/
 
 # 出力ディレクトリ
 output/
+# データベースファイルは除外しない
+!output/db/*.db
 
 # PDFデータ（必要に応じて）
 data/input/*.pdf
