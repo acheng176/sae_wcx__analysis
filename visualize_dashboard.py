@@ -10,23 +10,23 @@ import os
 from dotenv import load_dotenv
 from trend_analyzer import TrendAnalyzer
 
-# openai_insightsモジュールをインポート
-try:
-    from openai_insights import display_ai_insights
-    insights_available = True
-except ImportError:
-    insights_available = False
+# # openai_insightsモジュールをインポート
+# try:
+#     from openai_insights import display_ai_insights
+#     insights_available = True
+# except ImportError:
+#     insights_available = False
 
-# 環境変数の読み込み
-load_dotenv()
+# # 環境変数の読み込み
+# load_dotenv()
 
-# OpenAI APIキーが設定されているか確認
-has_openai_config = all([
-    os.getenv("AZURE_OPENAI_API_KEY"),
-    os.getenv("AZURE_OPENAI_ENDPOINT"),
-    os.getenv("AZURE_OPENAI_API_VERSION"),
-    os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
-])
+# # OpenAI APIキーが設定されているか確認
+# has_openai_config = all([
+#     os.getenv("AZURE_OPENAI_API_KEY"),
+#     os.getenv("AZURE_OPENAI_ENDPOINT"),
+#     os.getenv("AZURE_OPENAI_API_VERSION"),
+#     os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
+# ])
 
 # カラーパレット
 COLOR_MAPPING = {
