@@ -9,6 +9,7 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 from trend_analyzer import TrendAnalyzer
+from io import BytesIO
 
 # # openai_insightsモジュールをインポート
 # try:
@@ -120,17 +121,25 @@ def load_data():
         df['category_ja'] = df['category'].apply(translate_category)
         df['subcategory_ja'] = df['subcategory'].apply(translate_subcategory)
         
+        # 列名を設定
+        df = df.rename(columns={
+            'year': 'Year',
+            'count': '件数',
+            'category_ja': 'Category',
+            'subcategory_ja': 'Subcategory'
+        })
+        
     return df
 
 def create_category_distribution(df, selected_year=None, selected_categories=None, selected_subcategories=None):
     """カテゴリー分布の円グラフを作成（サイズ最適化版）"""
     filtered_df = df.copy()
     if selected_year:
-        filtered_df = filtered_df[filtered_df['year'] == selected_year]
+        filtered_df = filtered_df[filtered_df['Year'] == selected_year]
     if selected_categories:
-        filtered_df = filtered_df[filtered_df['category_ja'].isin(selected_categories)]
+        filtered_df = filtered_df[filtered_df['Category'].isin(selected_categories)]
     if selected_subcategories:
-        filtered_df = filtered_df[filtered_df['subcategory_ja'].isin(selected_subcategories)]
+        filtered_df = filtered_df[filtered_df['Subcategory'].isin(selected_subcategories)]
     
     # データが空の場合は空のグラフを返す
     if filtered_df.empty:
@@ -151,19 +160,19 @@ def create_category_distribution(df, selected_year=None, selected_categories=Non
         return fig
     
     # カテゴリー別の集計
-    category_counts = filtered_df.groupby('category_ja')['count'].sum().reset_index()
-    total = category_counts['count'].sum()
-    category_counts['percentage'] = (category_counts['count'] / total * 100).round(1)
+    category_counts = filtered_df.groupby('Category')['件数'].sum().reset_index()
+    total = category_counts['件数'].sum()
+    category_counts['percentage'] = (category_counts['件数'] / total * 100).round(1)
     
     # パーセンテージでソート
     category_counts = category_counts.sort_values('percentage', ascending=False)
     
     # カラーリストを作成
-    colors = [COLOR_MAPPING.get(cat, '#95A5A6') for cat in category_counts['category_ja']]
+    colors = [COLOR_MAPPING.get(cat, '#95A5A6') for cat in category_counts['Category']]
     
     # 単一の円グラフ（パーセンテージラベル付き）のみを作成
     fig = go.Figure(data=[go.Pie(
-        labels=category_counts['category_ja'],
+        labels=category_counts['Category'],
         values=category_counts['percentage'],
         hole=0.4,
         marker=dict(colors=colors),
@@ -230,20 +239,20 @@ def create_subcategory_bar(df, selected_year=None, selected_categories=None, sel
     """サブカテゴリーの棒グラフを作成（行間最適化版）"""
     filtered_df = df.copy()
     if selected_year:
-        filtered_df = filtered_df[filtered_df['year'] == selected_year]
+        filtered_df = filtered_df[filtered_df['Year'] == selected_year]
     if selected_categories:
-        filtered_df = filtered_df[filtered_df['category_ja'].isin(selected_categories)]
+        filtered_df = filtered_df[filtered_df['Category'].isin(selected_categories)]
     if selected_subcategories:
-        filtered_df = filtered_df[filtered_df['subcategory_ja'].isin(selected_subcategories)]
+        filtered_df = filtered_df[filtered_df['Subcategory'].isin(selected_subcategories)]
     
     # サブカテゴリーごとの集計
-    subcategory_counts = filtered_df.groupby('subcategory_ja')['count'].sum().reset_index()
+    subcategory_counts = filtered_df.groupby('Subcategory')['件数'].sum().reset_index()
     
     # 値が0のサブカテゴリーを除外
-    subcategory_counts = subcategory_counts[subcategory_counts['count'] > 0]
+    subcategory_counts = subcategory_counts[subcategory_counts['件数'] > 0]
     
     # 値で降順ソート
-    subcategory_counts = subcategory_counts.sort_values('count', ascending=True)
+    subcategory_counts = subcategory_counts.sort_values('件数', ascending=True)
     
     # 表示するサブカテゴリーの最大数を制限（オプション）
     max_items = 15
@@ -266,10 +275,10 @@ def create_subcategory_bar(df, selected_year=None, selected_categories=None, sel
     # 棒グラフの作成
     fig = go.Figure(data=[
         go.Bar(
-            x=subcategory_counts['count'],
-            y=subcategory_counts['subcategory_ja'],
+            x=subcategory_counts['件数'],
+            y=subcategory_counts['Subcategory'],
             orientation='h',
-            text=subcategory_counts['count'],
+            text=subcategory_counts['件数'],
             textposition='outside',
             hovertemplate="<b>%{y}</b><br>件数: %{x:,}<extra></extra>",
             marker=dict(color='#4A6FA5')
@@ -316,19 +325,19 @@ def create_subcategory_bar(df, selected_year=None, selected_categories=None, sel
 def create_trend_line(df, selected_categories=None):
     """トレンドラインを作成"""
     # カテゴリーごとの年間データを計算
-    category_yearly = df.groupby(['year', 'category_ja'])['count'].sum().reset_index()
+    category_yearly = df.groupby(['Year', 'Category'])['件数'].sum().reset_index()
     
     # グラフを作成
     fig = go.Figure()
     
     # すべてのカテゴリーに対してトレースを追加
-    for category in sorted(df['category_ja'].unique()):
-        cat_data = category_yearly[category_yearly['category_ja'] == category]
+    for category in sorted(df['Category'].unique()):
+        cat_data = category_yearly[category_yearly['Category'] == category]
         
         # 前年比の変化を計算
-        cat_data = cat_data.sort_values('year')
-        cat_data['prev_count'] = cat_data['count'].shift(1)
-        cat_data['yoy_change'] = ((cat_data['count'] - cat_data['prev_count']) / cat_data['prev_count'] * 100).round(1)
+        cat_data = cat_data.sort_values('Year')
+        cat_data['prev_count'] = cat_data['件数'].shift(1)
+        cat_data['yoy_change'] = ((cat_data['件数'] - cat_data['prev_count']) / cat_data['prev_count'] * 100).round(1)
         
         # 前年比の変化に応じて色を設定
         yoy_colors = []
@@ -341,8 +350,8 @@ def create_trend_line(df, selected_categories=None):
                 yoy_colors.append('#EF4444')  # 赤色（減少）
         
         fig.add_trace(go.Scatter(
-            x=cat_data['year'],
-            y=cat_data['count'],
+            x=cat_data['Year'],
+            y=cat_data['件数'],
             name=category,
             mode='lines+markers',
             line=dict(color=COLOR_MAPPING.get(category, '#95A5A6')),
@@ -360,8 +369,8 @@ def create_trend_line(df, selected_categories=None):
         title_font=dict(size=14),
         xaxis=dict(
             tickmode='array',
-            ticktext=sorted(df['year'].unique()),
-            tickvals=sorted(df['year'].unique()),
+            ticktext=sorted(df['Year'].unique()),
+            tickvals=sorted(df['Year'].unique()),
             dtick=1,
             showgrid=True,
             gridwidth=1,
@@ -397,26 +406,26 @@ def create_trend_line(df, selected_categories=None):
 def calculate_yoy_changes(df):
     """カテゴリーごとの前年比変化を計算（構成比とデータ数の両方を考慮）"""
     # 年ごとのカテゴリー別集計
-    yearly_counts = df.groupby(['year', 'category_ja'])['count'].sum().reset_index()
+    yearly_counts = df.groupby(['Year', 'Category'])['件数'].sum().reset_index()
     
     # 各年の総数を計算
-    yearly_totals = yearly_counts.groupby('year')['count'].sum().reset_index()
-    yearly_counts = yearly_counts.merge(yearly_totals, on='year', suffixes=('', '_total'))
+    yearly_totals = yearly_counts.groupby('Year')['件数'].sum().reset_index()
+    yearly_counts = yearly_counts.merge(yearly_totals, on='Year', suffixes=('', '_total'))
     
     # 構成比を計算
-    yearly_counts['share'] = (yearly_counts['count'] / yearly_counts['count_total'] * 100).round(2)
+    yearly_counts['share'] = (yearly_counts['件数'] / yearly_counts['件数_total'] * 100).round(2)
     
     # 最新年と前年のデータを抽出
-    latest_year = yearly_counts['year'].max()
+    latest_year = yearly_counts['Year'].max()
     previous_year = latest_year - 1
     
-    latest_data = yearly_counts[yearly_counts['year'] == latest_year][['category_ja', 'count', 'share']]
-    previous_data = yearly_counts[yearly_counts['year'] == previous_year][['category_ja', 'count', 'share']]
+    latest_data = yearly_counts[yearly_counts['Year'] == latest_year][['Category', '件数', 'share']]
+    previous_data = yearly_counts[yearly_counts['Year'] == previous_year][['Category', '件数', 'share']]
     
     # 前年比の変化を計算
     changes = latest_data.merge(
         previous_data,
-        on='category_ja',
+        on='Category',
         suffixes=('_current', '_prev'),
         how='left'
     )
@@ -425,7 +434,7 @@ def calculate_yoy_changes(df):
     changes['share_change'] = (changes['share_current'] - changes['share_prev']).round(1)
     
     # データ数の変化率を計算
-    changes['count_change_rate'] = ((changes['count_current'] - changes['count_prev']) / changes['count_prev'] * 100).round(1)
+    changes['count_change_rate'] = ((changes['件数_current'] - changes['件数_prev']) / changes['件数_prev'] * 100).round(1)
     
     # 総合スコアの計算
     # 1. 構成比の変化（絶対値）を正規化
@@ -440,8 +449,8 @@ def calculate_yoy_changes(df):
     changes['final_score'] = (changes['share_score'] * 0.6 + changes['count_score'] * 0.4).round(3)
     
     # 上位10件と下位10件を抽出（構成比の変化の大きさでソート）
-    top_gainers = changes.nlargest(10, 'share_change')[['category_ja', 'share_change', 'count_change_rate', 'final_score']]
-    top_losers = changes.nsmallest(10, 'share_change')[['category_ja', 'share_change', 'count_change_rate', 'final_score']]
+    top_gainers = changes.nlargest(10, 'share_change')[['Category', 'share_change', 'count_change_rate', 'final_score']]
+    top_losers = changes.nsmallest(10, 'share_change')[['Category', 'share_change', 'count_change_rate', 'final_score']]
     
     return top_gainers, top_losers
 
@@ -529,7 +538,7 @@ def display_yoy_changes(df, top_gainers, top_losers):
         changes = changes.sort_values('abs_change', ascending=False).head(10)
         
         for i, (category, share_change, count_change, score, type_) in enumerate(zip(
-            changes['category_ja'],
+            changes['Category'],
             changes['share_change'],
             changes['count_change_rate'],
             changes['final_score'],
@@ -575,7 +584,7 @@ def display_yoy_changes(df, top_gainers, top_losers):
         
         for i in range(10):  # 10位まで表示
             if i < len(positive_changes):
-                category = positive_changes.iloc[i]['category_ja']
+                category = positive_changes.iloc[i]['Category']
                 share_change = positive_changes.iloc[i]['share_change']
                 count_change = positive_changes.iloc[i]['count_change_rate']
                 score = positive_changes.iloc[i]['final_score']
@@ -623,7 +632,7 @@ def display_yoy_changes(df, top_gainers, top_losers):
         
         for i in range(10):  # 10位まで表示
             if i < len(negative_changes):
-                category = negative_changes.iloc[i]['category_ja']
+                category = negative_changes.iloc[i]['Category']
                 share_change = negative_changes.iloc[i]['share_change']
                 count_change = negative_changes.iloc[i]['count_change_rate']
                 score = negative_changes.iloc[i]['final_score']
@@ -672,7 +681,7 @@ def load_raw_data(year=None):
     """生データを読み込む"""
     db = DatabaseHandler()
     with sqlite3.connect(db.db_path) as conn:
-        # 年フィルターに基づいてクエリを構築AIによる技術トレンド分析
+        # 年フィルターに基づいてクエリを構築
         base_query = """
         SELECT 
             year,
@@ -704,8 +713,8 @@ def load_raw_data(year=None):
         df['category_ja'] = df['category'].apply(translate_category)
         df['subcategory_ja'] = df['subcategory'].apply(translate_subcategory)
         
-        # 著者情報を結合（空の場合は空文字列を返す）
-        df['著者'] = df.apply(lambda x: 
+        # 著者情報を結合
+        df['authors'] = df.apply(lambda x: 
             f"{x['main_author_group']} ({x['main_author_affiliation']})" if x['main_author_group'] else "" +
             (f", {x['co_author_group']} ({x['co_author_affiliation']})" if x['co_author_group'] else ""), 
             axis=1
@@ -713,77 +722,152 @@ def load_raw_data(year=None):
         
         # 自動車メーカーの抽出
         def extract_oem(row):
-            affiliations = str(row['main_author_affiliation']) + ' ' + str(row['co_author_affiliation'])
-            affiliations = affiliations.upper()  # 大文字に変換して比較
+            """著者の所属から自動車メーカーを抽出"""
+            # まずmain author affiliationのみで判定
+            main_affiliation = str(row['main_author_affiliation']).upper()
+            co_affiliation = str(row['co_author_affiliation']).upper()
             
-            if 'HYUNDAI' in affiliations:
-                return 'Hyundai'
-            elif 'FORD' in affiliations:
-                return 'Ford'
-            elif 'TOYOTA' in affiliations:
-                return 'Toyota'
-            elif 'HONDA' in affiliations:
-                return 'Honda'
-            elif 'STELLANTIS' in affiliations or 'CHRYSLER' in affiliations or 'FCA' in affiliations:
-                return 'Stellantis'
-            elif 'GENERAL MOTORS' in affiliations or 'GM ' in affiliations:
-                return 'GM'
-            elif 'NISSAN' in affiliations:
-                return 'Nissan'
-            return ''
+            # メーカー判定関数
+            def check_maker(affiliation):
+                # 日本メーカー
+                if 'TOYOTA' in affiliation or 'DAIHATSU' in affiliation or 'LEXUS' in affiliation:
+                    return 'Toyota'
+                elif 'HONDA' in affiliation:
+                    return 'Honda'
+                elif 'NISSAN' in affiliation or 'INFINITI' in affiliation:
+                    return 'Nissan'
+                elif 'MAZDA' in affiliation:
+                    return 'Mazda'
+                elif 'SUBARU' in affiliation or 'FUJI HEAVY' in affiliation:
+                    return 'Subaru'
+                elif 'MITSUBISHI' in affiliation or 'MITSUBISHI MOTORS' in affiliation:
+                    return 'Mitsubishi'
+                elif 'SUZUKI' in affiliation:
+                    return 'Suzuki'
+                elif 'ISUZU' in affiliation:
+                    return 'Isuzu'
+                elif 'DAIHATSU' in affiliation:
+                    return 'Daihatsu'
+                
+                # アメリカメーカー
+                elif 'FORD' in affiliation:
+                    return 'Ford'
+                elif 'GENERAL MOTORS' in affiliation or 'GM ' in affiliation or 'CHEVROLET' in affiliation or 'CADILLAC' in affiliation or 'BUICK' in affiliation:
+                    return 'GM'
+                elif 'STELLANTIS' in affiliation or 'CHRYSLER' in affiliation or 'FCA' in affiliation or 'JEEP' in affiliation or 'DODGE' in affiliation or 'RAM' in affiliation:
+                    return 'Stellantis'
+                elif 'TESLA' in affiliation:
+                    return 'Tesla'
+                
+                # 韓国メーカー
+                elif 'HYUNDAI' in affiliation or 'KIA' in affiliation:
+                    return 'Hyundai'
+                
+                # ドイツメーカー
+                elif 'VOLKSWAGEN' in affiliation or 'VW ' in affiliation or 'AUDI' in affiliation or 'PORSCHE' in affiliation or 'BENTLEY' in affiliation or 'LAMBORGHINI' in affiliation:
+                    return 'Volkswagen'
+                elif 'BMW' in affiliation or 'MINI' in affiliation or 'ROLLS-ROYCE' in affiliation:
+                    return 'BMW'
+                elif 'MERCEDES' in affiliation or 'MERCEDES-BENZ' in affiliation or 'DAIMLER' in affiliation:
+                    return 'Mercedes-Benz'
+                
+                # フランスメーカー
+                elif 'RENAULT' in affiliation:
+                    return 'Renault'
+                elif 'PEUGEOT' in affiliation or 'CITROEN' in affiliation:
+                    return 'PSA'
+                
+                # イタリアメーカー
+                elif 'FIAT' in affiliation:
+                    return 'Fiat'
+                
+                # スウェーデンメーカー
+                elif 'VOLVO' in affiliation:
+                    return 'Volvo'
+                
+                # 中国メーカー
+                elif 'BYD' in affiliation:
+                    return 'BYD'
+                elif 'GEELY' in affiliation:
+                    return 'Geely'
+                elif 'SAIC' in affiliation:
+                    return 'SAIC'
+                elif 'CHANGAN' in affiliation:
+                    return 'Changan'
+                elif 'GREAT WALL' in affiliation:
+                    return 'Great Wall'
+                elif 'DONGFENG' in affiliation:
+                    return 'Dongfeng'
+                elif 'FAW' in affiliation:
+                    return 'FAW'
+                
+                return ''
+            
+            # まずmain authorのaffiliationで判定
+            main_maker = check_maker(main_affiliation)
+            if main_maker:
+                return main_maker
+            
+            # main authorに自動車メーカーが含まれていない場合のみ、co-authorを確認
+            return check_maker(co_affiliation)
         
         # 自動車メーカーカラムを追加
-        df['自動車メーカー'] = df.apply(extract_oem, axis=1)
+        df['OEM'] = df.apply(extract_oem, axis=1)
         
         # No列を追加
-        df['No'] = range(1, len(df) + 1)
-        
-        # 不要な列を削除
-        df = df.drop(['category', 'subcategory', 'main_author_group', 'main_author_affiliation', 
-                     'co_author_group', 'co_author_affiliation'], axis=1)
+        df['no'] = range(1, len(df) + 1)
         
         # 列の順序を変更
-        df = df[['No', 'year', 'category_ja', 'subcategory_ja', 'session_name', 'session_code', 
-                'paper_no', 'title', '著者', '自動車メーカー', 'overview', 'organizers', 'chairperson']]
+        df = df[['no', 'year', 'category_ja', 'subcategory_ja', 'session_name', 'session_code', 
+                'paper_no', 'title', 'authors', 'OEM', 'overview', 'organizers', 'chairperson',
+                'main_author_group', 'main_author_affiliation', 'co_author_group', 'co_author_affiliation']]
         
-        # 列名を日本語に変更
-        df.columns = ['No', '年', 'カテゴリ', 'サブカテゴリ', 'セッション名', 'セッションコード', 
-                     '論文番号', 'タイトル', '著者', '自動車メーカー', '概要', 'オーガナイザー', 'チェアパーソン']
+        # 列名を設定
+        df.columns = ['No', 'Year', 'Category', 'Subcategory', 'Session Name', 'Session Code', 
+                     'Paper No', 'Title', 'Authors', 'OEM', 'Overview', 'Organizers', 'Chairperson',
+                     'Main Author Group', 'Main Author Affiliation', 'Co-Author Group', 'Co-Author Affiliation']
         
     return df
 
 def create_oem_trend_line(df):
     """自動車メーカー別の発表件数推移グラフを作成"""
     # 年とメーカーごとの発表件数を集計
-    oem_yearly = df[df['自動車メーカー'] != ''].groupby(['年', '自動車メーカー']).size().reset_index(name='件数')
+    oem_yearly = df[df['OEM'] != ''].groupby(['Year', 'OEM']).size().reset_index(name='件数')
     
     # 最新年のメーカー別ランキングを作成
-    latest_year = oem_yearly['年'].max()
-    latest_rankings = oem_yearly[oem_yearly['年'] == latest_year].sort_values('件数', ascending=False)
+    latest_year = oem_yearly['Year'].max()
+    latest_rankings = oem_yearly[oem_yearly['Year'] == latest_year].sort_values('件数', ascending=False)
     
     # グラフを作成
     fig = go.Figure()
     
-    # メーカー別の色を定義（ビジネス向けの落ち着いた色合いに変更）
+    # メーカー別の色を定義（カテゴリ別推移グラフと同様の色合いに変更）
     oem_colors = {
-        'Toyota': '#1E40AF',  # 濃い青
-        'Honda': '#0F766E',   # 濃いターコイズ
-        'Nissan': '#4B5563',  # スレートグレー
-        'GM': '#6B21A8',      # 濃いバイオレット
-        'Ford': '#0369A1',    # 濃いスカイブルー
-        'Hyundai': '#5B21B6', # 濃いインディゴ
-        'Stellantis': '#9D174D'  # 濃いピンク
+        'GM': '#2C5282',           # 深い青
+        'Stellantis': '#553C9A',   # 深い紫
+        'Hyundai': '#805AD5',      # 薄い紫
+        'Toyota': '#667EEA',       # インディゴ
+        'Ford': '#7F9CF5',         # 青
+        'Honda': '#90CDF4',        # 明るい青
+        'Geely': '#CBD5E1',        # グレー（2件以下）
+        'Suzuki': '#CBD5E1',       # グレー（2件以下）
+        'Nissan': '#CBD5E1',       # グレー（2件以下）
+        'Volvo': '#CBD5E1',        # グレー（2件以下）
+        'Volkswagen': '#CBD5E1',   # グレー（2件以下）
+        'BMW': '#CBD5E1',          # グレー（2件以下）
+        'Mitsubishi': '#CBD5E1',   # グレー（2件以下）
+        'Mazda': '#CBD5E1'         # グレー（2件以下）
     }
     
     # ランキング順にメーカーを並べ替え
-    ranked_oems = latest_rankings['自動車メーカー'].tolist()
+    ranked_oems = latest_rankings['OEM'].tolist()
     
     # メーカーごとにトレースを追加（ランキング順）
     for oem in ranked_oems:
-        oem_data = oem_yearly[oem_yearly['自動車メーカー'] == oem]
+        oem_data = oem_yearly[oem_yearly['OEM'] == oem]
         
         # 前年比の変化を計算
-        oem_data = oem_data.sort_values('年')
+        oem_data = oem_data.sort_values('Year')
         oem_data['前年件数'] = oem_data['件数'].shift(1)
         oem_data['前年比'] = ((oem_data['件数'] - oem_data['前年件数']) / oem_data['前年件数'] * 100).round(1)
         
@@ -798,10 +882,10 @@ def create_oem_trend_line(df):
                 yoy_colors.append('#EF4444')  # 赤色（減少）
         
         # 最新年の件数を取得
-        latest_count = oem_data[oem_data['年'] == latest_year]['件数'].iloc[0]
+        latest_count = oem_data[oem_data['Year'] == latest_year]['件数'].iloc[0]
         
         fig.add_trace(go.Scatter(
-            x=oem_data['年'],
+            x=oem_data['Year'],
             y=oem_data['件数'],
             name=f"{oem} ({latest_count}件)",  # 年を削除
             mode='lines+markers',
@@ -822,8 +906,8 @@ def create_oem_trend_line(df):
         xaxis=dict(
             title=None,
             tickmode='array',
-            ticktext=sorted(df['年'].unique()),
-            tickvals=sorted(df['年'].unique()),
+            ticktext=sorted(df['Year'].unique()),
+            tickvals=sorted(df['Year'].unique()),
             dtick=1,
             showgrid=True,
             gridwidth=1,
@@ -910,65 +994,61 @@ def display_raw_data(selected_year):
                 format="%d",
                 width=50
             ),
-            "年": st.column_config.NumberColumn(
-                "年",
+            "Year": st.column_config.NumberColumn(
+                "Year",
                 format="%d",
                 width=50
             ),
-            "カテゴリ": st.column_config.TextColumn(
-                "カテゴリ",
+            "Category": st.column_config.TextColumn(
+                "Category",
                 width=100
             ),
-            "サブカテゴリ": st.column_config.TextColumn(
-                "サブカテゴリ",
+            "Subcategory": st.column_config.TextColumn(
+                "Subcategory",
                 width=100
             ),
-            "セッション名": st.column_config.TextColumn(
-                "セッション名",
+            "Session Name": st.column_config.TextColumn(
+                "Session Name",
                 width=150
             ),
-            "セッションコード": st.column_config.TextColumn(
-                "セッションコード",
+            "Session Code": st.column_config.TextColumn(
+                "Session Code",
                 width=80
             ),
-            "論文番号": st.column_config.TextColumn(
-                "論文番号",
+            "Paper No": st.column_config.TextColumn(
+                "Paper No",
                 width=80
             ),
-            "タイトル": st.column_config.TextColumn(
-                "タイトル",
+            "Title": st.column_config.TextColumn(
+                "Title",
                 width=200
             ),
-            "著者": st.column_config.TextColumn(
-                "著者",
+            "Authors": st.column_config.TextColumn(
+                "Authors",
                 width=150
             ),
-            "自動車メーカー": st.column_config.TextColumn(
-                "自動車メーカー",
+            "OEM": st.column_config.TextColumn(
+                "OEM",
                 width=100
             ),
-            "概要": st.column_config.TextColumn(
-                "概要",
+            "Overview": st.column_config.TextColumn(
+                "Overview",
                 width=300
             ),
-            "オーガナイザー": st.column_config.TextColumn(
-                "オーガナイザー",
+            "Organizers": st.column_config.TextColumn(
+                "Organizers",
                 width=150
             ),
-            "チェアパーソン": st.column_config.TextColumn(
-                "チェアパーソン",
+            "Chairperson": st.column_config.TextColumn(
+                "Chairperson",
                 width=150
             )
         }
     )
     
     # Excelダウンロードボタン
-    output_dir = "output/excel"
-    os.makedirs(output_dir, exist_ok=True)
-    output_file = f"{output_dir}/wcx_sessions{year_str}_{current_time}.xlsx"
-    
-    # Excelファイルの作成
-    with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, sheet_name='WCX Sessions', index=False)
         
         # ワークシートを取得
@@ -988,9 +1068,8 @@ def display_raw_data(selected_year):
             adjusted_width = min(adjusted_width, 100)  # 最大幅を100文字に制限
             worksheet.column_dimensions[column[0].column_letter].width = adjusted_width
     
-    # ダウンロードボタンの表示
-    with open(output_file, 'rb') as f:
-        excel_data = f.read()
+    # バイトデータを取得
+    excel_data = output.getvalue()
     
     year_text = f"{selected_year}年の" if selected_year and selected_year != 'すべて' else "全期間の"
     
@@ -1016,7 +1095,7 @@ def display_raw_data(selected_year):
     st.download_button(
         label=f'{year_text}データをExcelでダウンロード',
         data=excel_data,
-        file_name=os.path.basename(output_file),
+        file_name=os.path.basename(f"wcx_sessions{year_str}_{current_time}.xlsx"),
         mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         use_container_width=True,
         key="download_excel"
@@ -1090,18 +1169,18 @@ def main():
     
     with col1:
         # 年の選択
-        years = sorted(df['year'].unique())
+        years = sorted(df['Year'].unique())
         selected_year = st.selectbox('表示年を選択', ['すべて'] + list(years))
     
     with col2:
         # カテゴリの選択
-        category_totals = df.groupby('category_ja')['count'].sum().sort_values(ascending=False)
+        category_totals = df.groupby('Category')['件数'].sum().sort_values(ascending=False)
         categories = category_totals.index.tolist()
         selected_categories = st.multiselect('カテゴリを選択（複数選択可）', categories)
     
     with col3:
         # サブカテゴリの選択
-        subcategory_totals = df.groupby('subcategory_ja')['count'].sum().sort_values(ascending=False)
+        subcategory_totals = df.groupby('Subcategory')['件数'].sum().sort_values(ascending=False)
         subcategories = subcategory_totals.index.tolist()
         selected_subcategories = st.multiselect('サブカテゴリを選択（複数選択可）', subcategories)
     
