@@ -11,6 +11,154 @@ from dotenv import load_dotenv
 from trend_analyzer import TrendAnalyzer
 from io import BytesIO
 
+# Streamlitのテーマを固定
+st.set_page_config(
+    page_title="SAE WCX 技術トレンド分析",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# カスタムテーマを設定
+st.markdown("""
+    <style>
+        /* 基本スタイル */
+        .stApp {
+            background-color: white;
+            color: black;
+        }
+        .stButton>button {
+            background-color: #2563EB;
+            color: white;
+        }
+        
+        /* セレクトボックスとマルチセレクトのスタイル */
+        .stSelectbox, .stMultiselect {
+            background-color: white !important;
+            color: black !important;
+        }
+        .stSelectbox > div > div, .stMultiselect > div > div {
+            background-color: white !important;
+            color: black !important;
+        }
+        .stSelectbox > div, .stMultiselect > div {
+            background-color: white !important;
+            color: black !important;
+        }
+        
+        /* データフレームのスタイル */
+        .stDataFrame {
+            background-color: white !important;
+        }
+        
+        /* マークダウンのスタイル */
+        .stMarkdown {
+            color: black !important;
+        }
+        
+        /* データテーブルのスタイル */
+        .dataframe {
+            background-color: white !important;
+        }
+        .dataframe th {
+            background-color: #f8f9fa !important;
+            color: black !important;
+        }
+        .dataframe td {
+            background-color: white !important;
+            color: black !important;
+        }
+        
+        /* Streamlitのデータフレーム関連要素 */
+        [data-testid="stDataFrameResizable"] {
+            background-color: white !important;
+        }
+        
+        /* 詳細データテーブルのスタイル */
+        div[data-testid="stTable"] {
+            background-color: white !important;
+        }
+        
+        /* テーブルのヘッダーとセル */
+        div[role="table"] {
+            background-color: white !important;
+        }
+        div[role="table"] div[role="cell"] {
+            background-color: white !important;
+            color: black !important;
+        }
+        div[role="table"] div[role="columnheader"] {
+            background-color: #f8f9fa !important;
+            color: black !important;
+        }
+        div[role="table"] div[role="row"] {
+            background-color: white !important;
+            border-bottom: 1px solid #e2e8f0 !important;
+        }
+        
+        /* スクロールバーの背景 */
+        ::-webkit-scrollbar-track {
+            background-color: white !important;
+        }
+        ::-webkit-scrollbar-corner {
+            background-color: white !important;
+        }
+        
+        /* フィルターのスタイル */
+        .stSelectbox label, .stMultiselect label {
+            color: black !important;
+        }
+        div[data-baseweb="select"] {
+            background-color: white !important;
+        }
+        div[data-baseweb="select"] * {
+            background-color: white !important;
+            color: black !important;
+        }
+        div[data-baseweb="popover"] {
+            background-color: white !important;
+        }
+        div[data-baseweb="popover"] * {
+            background-color: white !important;
+            color: black !important;
+        }
+        div[role="listbox"] {
+            background-color: white !important;
+        }
+        div[role="option"] {
+            background-color: white !important;
+            color: black !important;
+        }
+        
+        /* 選択された項目のスタイル */
+        div[data-baseweb="tag"] {
+            background-color: #E2E8F0 !important;
+            color: black !important;
+        }
+        div[data-baseweb="tag"]:hover {
+            background-color: #CBD5E1 !important;
+        }
+        
+        /* データテーブルのスタイルを強制的に上書き */
+        div[data-testid="stDataFrameContainer"] {
+            background-color: white !important;
+        }
+        div[data-testid="stDataFrameContainer"] * {
+            background-color: white !important;
+            color: black !important;
+        }
+        div[data-testid="stDataFrameContainer"] th {
+            background-color: #f8f9fa !important;
+            color: black !important;
+            font-weight: bold !important;
+        }
+        div[data-testid="stDataFrameContainer"] td {
+            background-color: white !important;
+            color: black !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 # # openai_insightsモジュールをインポート
 # try:
 #     from openai_insights import display_ai_insights
@@ -209,7 +357,7 @@ def create_category_distribution(df, selected_year=None, selected_categories=Non
     
     fig.update_layout(
         title=title,
-        title_font=dict(size=14),
+        title_font=dict(size=14, color='black'),
         showlegend=True,
         legend=dict(
             orientation="v",
@@ -217,9 +365,10 @@ def create_category_distribution(df, selected_year=None, selected_categories=Non
             y=0.5,
             xanchor="left",
             x=-0.5,  # 左側に凡例を配置
-            font=dict(size=12, family='Arial'),  # 文字サイズを12pxに統一
+            font=dict(size=12, family='Arial', color='black'),  # 文字サイズを12pxに統一、色を黒に
             itemsizing='constant',
-            itemwidth=30
+            itemwidth=30,
+            bgcolor='rgba(255, 255, 255, 0.8)'
         ),
         height=304,  # 380 * 0.8
         width=440,   # 550 * 0.8
@@ -230,7 +379,10 @@ def create_category_distribution(df, selected_year=None, selected_categories=Non
             r=10,
             pad=4
         ),
-        autosize=False
+        autosize=False,
+        plot_bgcolor='white',  # プロット領域の背景色を白に設定
+        paper_bgcolor='white',  # グラフ全体の背景色を白に設定
+        font=dict(color='black')  # すべてのテキストを黒に設定
     )
     
     return fig
@@ -290,11 +442,15 @@ def create_subcategory_bar(df, selected_year=None, selected_categories=None, sel
     
     fig.update_layout(
         title=title,
-        title_font=dict(size=14),
+        title_font=dict(size=14, color='black'),
         xaxis_title='発表件数',
+        xaxis=dict(
+            title_font=dict(color='black'),
+            tickfont=dict(color='black')
+        ),
         yaxis=dict(
             title='',  # y軸のタイトルを削除
-            tickfont=dict(size=12),  # サブカテゴリ名の文字サイズを12pxに増加
+            tickfont=dict(size=12, color='black'),  # サブカテゴリ名の文字サイズを12pxに増加、色を黒に
             automargin=True
         ),
         height=bar_height,
@@ -310,13 +466,16 @@ def create_subcategory_bar(df, selected_year=None, selected_categories=None, sel
         yaxis_categoryorder='total ascending',
         bargap=0.1,
         uniformtext=dict(minsize=8, mode='hide'),
-        autosize=False
+        autosize=False,
+        plot_bgcolor='white',  # プロット領域の背景色を白に設定
+        paper_bgcolor='white',  # グラフ全体の背景色を白に設定
+        font=dict(color='black')  # すべてのテキストを黒に設定
     )
     
     # バーチャートのテキストスタイルを調整
     fig.update_traces(
         texttemplate='%{text:,}',
-        textfont=dict(size=9),  # テキストサイズを小さく
+        textfont=dict(size=9, color='black'),  # テキストサイズを小さく、色を黒に
         textposition='outside'
     )
     
@@ -366,7 +525,7 @@ def create_trend_line(df, selected_categories=None):
     # レイアウトを設定
     fig.update_layout(
         title='カテゴリ別発表件数',
-        title_font=dict(size=14),
+        title_font=dict(size=14, color='black'),
         xaxis=dict(
             tickmode='array',
             ticktext=sorted(df['Year'].unique()),
@@ -375,13 +534,16 @@ def create_trend_line(df, selected_categories=None):
             showgrid=True,
             gridwidth=1,
             gridcolor='#E2E8F0',
-            domain=[0, 0.8]  # 右側の幅を広げる
+            domain=[0, 0.8],  # 右側の幅を広げる
+            tickfont=dict(color='black')
         ),
         yaxis=dict(
             title='発表件数',
             showgrid=True,
             gridwidth=1,
-            gridcolor='#E2E8F0'
+            gridcolor='#E2E8F0',
+            title_font=dict(color='black'),
+            tickfont=dict(color='black')
         ),
         height=400,
         width=1600,  # 幅を1600pxに拡大
@@ -393,12 +555,15 @@ def create_trend_line(df, selected_categories=None):
             y=0.5,
             xanchor='left',
             x=0.85,
-            font=dict(size=12, family='Arial'),
+            font=dict(size=12, family='Arial', color='black'),
             itemclick='toggleothers',
             itemdoubleclick='toggle',
             bgcolor='rgba(255, 255, 255, 0.8)'
         ),
-        hovermode='closest'
+        hovermode='closest',
+        plot_bgcolor='white',  # プロット領域の背景色を白に設定
+        paper_bgcolor='white',  # グラフ全体の背景色を白に設定
+        font=dict(color='black')  # すべてのテキストを黒に設定
     )
     
     return fig
@@ -902,7 +1067,7 @@ def create_oem_trend_line(df):
     # レイアウトを設定
     fig.update_layout(
         title='自動車メーカー別 発表件数',
-        title_font=dict(size=14),
+        title_font=dict(size=14, color='black'),
         xaxis=dict(
             title=None,
             tickmode='array',
@@ -912,13 +1077,16 @@ def create_oem_trend_line(df):
             showgrid=True,
             gridwidth=1,
             gridcolor='#E2E8F0',
-            domain=[0, 0.8]  # 右側の幅を広げる
+            domain=[0, 0.8],  # 右側の幅を広げる
+            tickfont=dict(color='black')
         ),
         yaxis=dict(
             title='発表件数',
             showgrid=True,
             gridwidth=1,
-            gridcolor='#E2E8F0'
+            gridcolor='#E2E8F0',
+            title_font=dict(color='black'),
+            tickfont=dict(color='black')
         ),
         height=400,
         width=1600,  # 幅を1600pxに拡大
@@ -930,12 +1098,15 @@ def create_oem_trend_line(df):
             y=0.5,
             xanchor='left',
             x=0.85,
-            font=dict(size=12, family='Arial'),
+            font=dict(size=12, family='Arial', color='black'),
             itemclick='toggleothers',
             itemdoubleclick='toggle',
             bgcolor='rgba(255, 255, 255, 0.8)'
         ),
-        hovermode='closest'
+        hovermode='closest',
+        plot_bgcolor='white',  # プロット領域の背景色を白に設定
+        paper_bgcolor='white',  # グラフ全体の背景色を白に設定
+        font=dict(color='black')  # すべてのテキストを黒に設定
     )
     
     return fig
@@ -1102,12 +1273,6 @@ def display_raw_data(selected_year):
     )
 
 def main():
-    st.set_page_config(
-        page_title=" SAE WCX 技術トレンド分析",
-        page_icon="🚗",
-        layout="wide"
-    )
-    
     # ヘッダーの配置
     st.title("SAE WCX 技術トレンド分析")
     st.markdown("""
